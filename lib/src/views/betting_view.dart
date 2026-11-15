@@ -326,7 +326,7 @@ class _Condition extends StatelessWidget {
     final style = TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: color, height: 1.2);
     return Row(
       mainAxisSize: MainAxisSize.min,
-      children: [Text('$arrow ', style: style), Text(label, style: style)],
+      children: [Icon(arrow, size: 15, color: color), const SizedBox(width: 2), Text(label, style: style)],
     );
   }
 }

@@ -191,11 +191,12 @@ class _FacePainter extends CustomPainter {
   bool shouldRepaint(_FacePainter old) => old.no != no || old.mood != mood;
 }
 
-/// 調子 1(絶不調)〜 5(絶好調)の表示(矢印・名前・色)
-(String arrow, String label, Color color) conditionDisplay(int cond) => switch (cond) {
-      5 => ('↑', '絶好調', const Color(0xFFC62828)),
-      4 => ('↗', '好調', const Color(0xFFE06A00)),
-      2 => ('↘', '不調', const Color(0xFF2A6FBF)),
-      1 => ('↓', '絶不調', const Color(0xFF283593)),
-      _ => ('→', '普通', const Color(0xFF5D6F62)),
+/// 調子 1(絶不調)〜 5(絶好調)の表示(矢印・名前・色)。
+/// 矢印は文字ではなくアイコンで出す(斜め矢印の文字は Android で絵文字になってしまう)。
+(IconData arrow, String label, Color color) conditionDisplay(int cond) => switch (cond) {
+      5 => (Icons.north, '絶好調', const Color(0xFFC62828)),
+      4 => (Icons.north_east, '好調', const Color(0xFFE06A00)),
+      2 => (Icons.south_east, '不調', const Color(0xFF2A6FBF)),
+      1 => (Icons.south, '絶不調', const Color(0xFF283593)),
+      _ => (Icons.east, '普通', const Color(0xFF5D6F62)),
     };
