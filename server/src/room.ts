@@ -2,7 +2,7 @@
 
 import { DurableObject } from 'cloudflare:workers';
 import {
-  adminCloseAndRace, adminNewGame, adminNext, adminReset, adminStart, cancelBet, cancelTicket, finishRace,
+  adminCloseAndRace, adminNewGame, adminNext, adminReset, adminStart, buyTip, cancelBet, cancelTicket, finishRace,
   join, kick, kickAll, migrate, newGame, oddsMessage, placeBet, placeTicket, sameScene, setOnline, viewFor,
   type ErrorCode, type GameState, type R,
 } from './game';
@@ -137,6 +137,10 @@ export class Room extends DurableObject<Env> {
           return this.apply(ws, placeTicket(this.state, att.playerId, msg.type, msg.horses, msg.amount, newId));
         }
         return this.apply(ws, placeBet(this.state, att.playerId, msg.horse, msg.amount));
+      }
+      case 'buyTip': {
+        if (att.role !== 'player' || !att.playerId) return this.sendError(ws, 'not_allowed');
+        return this.apply(ws, buyTip(this.state, att.playerId, msg.id));
       }
       case 'cancelBet': {
         if (att.role !== 'player' || !att.playerId) return this.sendError(ws, 'not_allowed');

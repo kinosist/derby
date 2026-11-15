@@ -1,9 +1,10 @@
 // ゲームの状態と状態遷移(純粋関数)。引数の state は変更せず、新しい state を返す。
 
 import {
-  comboKey, drawOrder, makeCourse, makeField, makeOddsTable, makeTimes, payout, raceDuration, ticketWins,
-  BET_HORSES, BET_TYPES, HORSES, MAX_PLAYERS, MAX_TICKETS, MIN_BET, NAME_MAX, RESCUE_COINS, START_COINS, TOTAL_RACES,
-  type BetType, type Course, type Horse, type OddsTable, type Rng,
+  comboKey, drawOrder, makeCourse, makeField, makeOddsTable, makeTimes, makeTips, payout, raceDuration, ticketWins,
+  BET_HORSES, BET_TYPES, HORSES, MAX_PLAYERS, MAX_TICKETS, MIN_BET, NAME_MAX, RESCUE_COINS, START_COINS, TIPSTERS,
+  TOTAL_RACES,
+  type BetType, type Course, type Horse, type OddsTable, type Rng, type Tip, type TipsterId,
 } from './rules';
 
 export type Phase = 'lobby' | 'betting' | 'racing' | 'result' | 'final';
@@ -32,6 +33,8 @@ export type Player = {
   online: boolean;
   tickets: Ticket[];
   results: Results | null;
+  /** このレースで買った予想屋の id */
+  tips: string[];
 };
 
 export type Race = { startedAt: number; durationMs: number; order: number[]; times: number[][] };
@@ -46,6 +49,8 @@ export type GameState = {
   oddsTable?: OddsTable | null;
   /** レースごとに変わる識別子。端末が倍率表と状態を対応させるのに使う。 */
   raceKey?: string;
+  /** 予想屋ごとの、このレースの予想(賭け受付の開始時に作る) */
+  tips?: Record<TipsterId, Tip> | null;
   players: Player[];
   race: Race | null;
 };
@@ -66,6 +71,10 @@ export type View = {
   raceKey: string | null;
   horses: PublicHorse[];
   course: Course | null;
+  /** 予想屋の一覧(賭け受付中のみ) */
+  tipsters: { id: string; name: string; price: number; stars: number }[];
+  /** 結果画面で公開する、全予想屋の予想と ◎ が 1 着だったか */
+  tipResults: { id: string; name: string; marks: number[]; hit: boolean }[];
   players: { id: string; name: string; coins: number; online: boolean; rank: number; hasBet: boolean }[];
   betCount: number;
   onlineCount: number;
@@ -73,6 +82,8 @@ export type View = {
     id: string; name: string; coins: number; rank: number;
     tickets: Ticket[];
     results: Results | null;
+    /** 買った予想(本人にだけ届く) */
+    tips: { id: string; marks: number[]; comment: string }[];
     /** 古いアプリ向け */
     bet: LegacyBet | null;
     lastResult: LegacyResult | null;
@@ -89,7 +100,7 @@ export type View = {
 export type OddsMessage = { t: 'odds'; raceKey: string } & OddsTable;
 
 export function newGame(): GameState {
-  return { phase: 'lobby', raceNo: 0, horses: [], course: null, oddsTable: null, players: [], race: null };
+  return { phase: 'lobby', raceNo: 0, horses: [], course: null, oddsTable: null, tips: null, players: [], race: null };
 }
 
 const PHASES: Phase[] = ['lobby', 'betting', 'racing', 'result', 'final'];
@@ -118,7 +129,7 @@ function migrateState(raw: unknown): GameState {
   let changed = false;
   const players = s.players.map((p, i) => {
     const old = p as Player & { bet?: LegacyBet | null; lastResult?: LegacyResult | null };
-    if (Array.isArray(old.tickets) && typeof old.pub === 'string' && !('bet' in old)) return p;
+    if (Array.isArray(old.tickets) && typeof old.pub === 'string' && Array.isArray(old.tips) && !('bet' in old)) return p;
     changed = true;
     const { bet, lastResult, ...rest } = old;
     const tickets: Ticket[] = Array.isArray(old.tickets)
@@ -138,9 +149,12 @@ function migrateState(raw: unknown): GameState {
         : null;
     // 公開用の id は全員に送られる。本当の id から作ると乗っ取りに使えてしまうので、無関係な乱数にする。
     const pub = typeof old.pub === 'string' ? old.pub : `pub-${i}-${Math.random().toString(36).slice(2, 12)}`;
-    return { ...rest, pub, tickets, results };
+    return { ...rest, pub, tickets, results, tips: Array.isArray(old.tips) ? old.tips : [] };
   });
-  return changed ? { ...s, players } : s;
+  // 予想屋の予想を持たない状態(以前の版で始まったレース)には、いま作って足す
+  const needsTips = !s.tips && s.horses.length > 0 && s.phase !== 'lobby' && s.phase !== 'final';
+  if (!changed && !needsTips) return s;
+  return { ...s, players, tips: needsTips ? makeTips(s.horses, Math.random) : s.tips };
 }
 
 /** 前後の空白を除き、制御文字を空白に置き換える。1〜12 文字(コードポイント)でなければ null。 */
@@ -183,7 +197,7 @@ export function join(
   if (s.players.length >= MAX_PLAYERS) return { state: s, error: 'room_full' };
   const playerId = usableId(s, id) ? id : newId();
   const player: Player = {
-    id: playerId, pub: newId(), name, coins: START_COINS, online: true, tickets: [], results: null,
+    id: playerId, pub: newId(), name, coins: START_COINS, online: true, tickets: [], results: null, tips: [],
   };
   return { state: { ...s, players: [...s.players, player] }, playerId };
 }
@@ -274,6 +288,21 @@ export function cancelBet(s: GameState, playerId: string): R {
 
 const staked = (p: Player) => p.tickets.reduce((a, t) => a + t.amount, 0);
 
+/**
+ * 予想屋から予想を買う。料金はその場で引き、戻らない。1 レースにつき各予想屋 1 回。
+ * 料金を払うと、買ってある馬券の合計が所持金を超えてしまうなら買えない。
+ */
+export function buyTip(s: GameState, playerId: string, tipsterId: unknown): R {
+  const p = s.players.find((x) => x.id === playerId);
+  if (!p || s.phase !== 'betting') return { state: s, error: 'not_allowed' };
+  const tipster = typeof tipsterId === 'string' ? TIPSTERS.find((t) => t.id === tipsterId) : undefined;
+  if (!tipster || !s.tips || p.tips.includes(tipster.id)) return { state: s, error: 'bad_bet' };
+  if (p.coins - tipster.price < staked(p)) return { state: s, error: 'bad_bet' };
+  return {
+    state: mapPlayer(s, playerId, (x) => ({ ...x, coins: x.coins - tipster.price, tips: [...x.tips, tipster.id] })),
+  };
+}
+
 /** 賭け受付を始める: 出走馬と倍率表を作り、前のレースの馬券と結果を消し、救済コインを配る。 */
 function openBetting(s: GameState, raceNo: number, rng: Rng): GameState {
   const horses = makeField(rng);
@@ -283,12 +312,14 @@ function openBetting(s: GameState, raceNo: number, rng: Rng): GameState {
     horses,
     course: makeCourse(rng),
     oddsTable: makeOddsTable(horses),
+    tips: makeTips(horses, rng),
     raceKey: `${raceNo}-${Math.floor(rng() * 0xffffffff).toString(36)}`,
     race: null,
     players: s.players.map((p) => ({
       ...p,
       tickets: [],
       results: null,
+      tips: [],
       coins: p.coins < MIN_BET ? RESCUE_COINS : p.coins,
     })),
   };
@@ -346,8 +377,9 @@ function backToLobby(s: GameState): GameState {
     horses: [],
     course: null,
     oddsTable: null,
+    tips: null,
     race: null,
-    players: s.players.map((p) => ({ ...p, coins: START_COINS, tickets: [], results: null })),
+    players: s.players.map((p) => ({ ...p, coins: START_COINS, tickets: [], results: null, tips: [] })),
   };
 }
 
@@ -405,6 +437,14 @@ export function viewFor(s: GameState, playerId: string | null, isAdmin: boolean,
     raceKey: showHorses ? (s.raceKey ?? null) : null,
     horses: showHorses ? s.horses.map(publicHorse) : [],
     course: showHorses ? (s.course ?? null) : null,
+    tipsters: s.phase === 'betting' && s.tips
+      ? TIPSTERS.map((t) => ({ id: t.id, name: t.name, price: t.price, stars: t.stars }))
+      : [],
+    tipResults: s.phase === 'result' && s.tips && s.race
+      ? TIPSTERS.map((t) => ({
+          id: t.id, name: t.name, marks: s.tips![t.id].marks, hit: s.tips![t.id].marks[0] === s.race!.order[0],
+        }))
+      : [],
     players: sorted.map((p) => ({
       id: shownId(p),
       name: p.name,
@@ -420,6 +460,12 @@ export function viewFor(s: GameState, playerId: string | null, isAdmin: boolean,
           id: me.id, name: me.name, coins: me.coins, rank: rankOf(me),
           tickets: me.tickets,
           results: me.results,
+          // 買った予想屋の分だけ、予想の中身を送る
+          tips: s.tips && showHorses
+            ? TIPSTERS.filter((t) => me.tips.includes(t.id)).map((t) => ({
+                id: t.id, marks: s.tips![t.id].marks, comment: s.tips![t.id].comment,
+              }))
+            : [],
           bet: legacyBet(me),
           lastResult: legacyResult(me),
         }

@@ -326,3 +326,57 @@ export function ticketWins(type: BetType, horses: number[], order: number[]): bo
       return horses.length === 3 && horses.every((h, i) => order[i] === h);
   }
 }
+
+// ---- 予想屋 ----
+
+/** 予想屋。noise は読み違いの大きさ(勝率の対数に足す誤差の標準偏差)。小さいほど当たる。 */
+export const TIPSTERS = [
+  { id: 'paper', name: '競馬新聞', price: 30, stars: 1, noise: 1.5 },
+  { id: 'veteran', name: 'ベテラン予想屋', price: 80, stars: 2, noise: 0.7 },
+  { id: 'master', name: '伝説の予想屋', price: 150, stars: 3, noise: 0.1 },
+] as const;
+export type TipsterId = (typeof TIPSTERS)[number]['id'];
+
+/** 予想: marks は ◎本命・○対抗・▲単穴 の馬番 */
+export type Tip = { marks: number[]; comment: string };
+
+const TIP_COMMENTS = [
+  '今日はこの馬で決まり!',
+  '◎は仕上がりがいい。○との勝負だ。',
+  '人気より中身。◎を信じなさい。',
+  '▲の一発にも注意だよ。',
+  '◎○▲の 3 頭でまず間違いない。',
+  'パドックの気配は◎がいちばん。',
+  '迷ったら◎から買うことだね。',
+  '今日の◎は自信があるよ。',
+];
+
+/**
+ * 予想屋は「勝ちやすい馬」だけでなく「倍率のわりに勝ちやすい馬(調子の良い馬)」を重く見る。
+ * この重みが大きいほど、調子の良さを重視した予想になる。
+ */
+const TIP_VALUE_WEIGHT = 3;
+
+/** 標準正規分布の乱数(Box–Muller) */
+function gaussian(rng: Rng): number {
+  const u = Math.max(rng(), 1e-12);
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rng());
+}
+
+/**
+ * 各予想屋の予想を作る。その日の調子も含めた実際の勝率を、予想屋ごとの誤差つきで見て、上位 3 頭を選ぶ。
+ * 1 レースにつき予想屋ごとに 1 つ(誰が買っても同じ内容)。
+ */
+export function makeTips(horses: Horse[], rng: Rng): Record<TipsterId, Tip> {
+  const out = {} as Record<TipsterId, Tip>;
+  for (const t of TIPSTERS) {
+    const scored = horses
+      .map((h) => ({ no: h.no, score: Math.log(h.prob) + TIP_VALUE_WEIGHT * Math.log(h.prob / (h.baseProb ?? h.prob)) + gaussian(rng) * t.noise }))
+      .sort((a, b) => b.score - a.score || a.no - b.no);
+    out[t.id] = {
+      marks: scored.slice(0, 3).map((x) => x.no),
+      comment: TIP_COMMENTS[Math.floor(rng() * TIP_COMMENTS.length)],
+    };
+  }
+  return out;
+}

@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import {
-  COND_FACTORS, MOODS, STYLES, comboKey, drawOrder, makeOddsTable, ticketWins, makeCourse, makeField, makeTimes, oddsFor, payout, raceDuration, seededRng,
+  COND_FACTORS, MOODS, STYLES, TIPSTERS, comboKey, makeTips, drawOrder, makeOddsTable, ticketWins, makeCourse, makeField, makeTimes, oddsFor, payout, raceDuration, seededRng,
   type Course,
 } from '../src/rules';
 
@@ -286,4 +286,59 @@ test('倍率どおりに賭け続けても、調子を見なければ得も損�
   expect(sum.quinella[1] / sum.quinella[0]).toBeLessThan(1.15);
   expect(sum.trifecta[1] / sum.trifecta[0]).toBeGreaterThan(0.7);
   expect(sum.trifecta[1] / sum.trifecta[0]).toBeLessThan(1.3);
+});
+
+test('TIPSTERS: 3 人。高いほど精度が良い', () => {
+  expect(TIPSTERS.map((t) => [t.id, t.name, t.price, t.stars])).toEqual([
+    ['paper', '競馬新聞', 30, 1],
+    ['veteran', 'ベテラン予想屋', 80, 2],
+    ['master', '伝説の予想屋', 150, 3],
+  ]);
+  expect(TIPSTERS[0].noise).toBeGreaterThan(TIPSTERS[1].noise);
+  expect(TIPSTERS[1].noise).toBeGreaterThan(TIPSTERS[2].noise);
+});
+
+test('makeTips: 予想屋ごとに、重複のない 3 頭(◎○▲)とひとことを返す', () => {
+  for (let seed = 1; seed <= 100; seed++) {
+    const tips = makeTips(makeField(seededRng(seed)), seededRng(seed + 500));
+    expect(Object.keys(tips).sort()).toEqual(['master', 'paper', 'veteran']);
+    for (const tip of Object.values(tips)) {
+      expect(tip.marks.length).toBe(3);
+      expect(new Set(tip.marks).size).toBe(3);
+      tip.marks.forEach((no) => { expect(Number.isInteger(no)).toBe(true); expect(no).toBeGreaterThanOrEqual(1); expect(no).toBeLessThanOrEqual(8); });
+      expect(typeof tip.comment).toBe('string');
+      expect(tip.comment.length).toBeGreaterThan(0);
+    }
+  }
+});
+
+test('makeTips: 高い予想屋ほど ◎ が 1 着になりやすく、◎ を買ったときの戻りも大きい', () => {
+  const rng = seededRng(31337);
+  const wins = { paper: 0, veteran: 0, master: 0 };
+  const top3 = { paper: 0, veteran: 0, master: 0 };
+  const roi = { paper: 0, veteran: 0, master: 0 };
+  const n = 12000;
+  for (let i = 0; i < n; i++) {
+    const f = makeField(rng);
+    const tips = makeTips(f, rng);
+    const order = drawOrder(f, rng);
+    const winner = order[0];
+    for (const id of ['paper', 'veteran', 'master'] as const) {
+      const first = tips[id].marks[0];
+      if (first === winner) { wins[id]++; roi[id] += f.find((h) => h.no === first)!.odds; }
+      if (tips[id].marks.includes(winner)) top3[id]++;
+    }
+  }
+  expect(wins.master).toBeGreaterThan(wins.veteran);
+  expect(wins.veteran).toBeGreaterThan(wins.paper);
+  expect(wins.master / n).toBeGreaterThan(0.24);
+  expect(wins.paper / n).toBeGreaterThan(0.17);
+  expect(top3.master).toBeGreaterThan(top3.veteran);
+  expect(top3.veteran).toBeGreaterThan(top3.paper);
+  // ◎ の単勝を買い続けたときの回収率: 予想が良いほど高く、どれも 1 を超える
+  expect(roi.master / n).toBeGreaterThan(roi.veteran / n);
+  expect(roi.veteran / n).toBeGreaterThan(roi.paper / n);
+  expect(roi.paper / n).toBeGreaterThan(1.1);
+  expect(roi.master / n).toBeGreaterThan(1.3);
+  expect(roi.master / n - roi.paper / n).toBeGreaterThan(0.1); // 料金の差に見合う違いがある
 });

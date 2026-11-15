@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
-  adminCloseAndRace, adminNewGame, adminNext, adminReset, adminStart, cancelBet, finishRace,
+  adminCloseAndRace, adminNewGame, adminNext, adminReset, adminStart, buyTip, cancelBet, finishRace,
   cancelTicket, join, kick, kickAll, migrate, newGame, normalizeName, oddsMessage, placeBet, placeTicket,
   sameScene, setOnline, viewFor,
   type GameState,
@@ -695,5 +695,141 @@ describe('馬券の種類と複数購入', () => {
       expect(s.phase).toBe('lobby');
       expect(s.players).toEqual([]);
     }
+  });
+});
+
+describe('予想屋', () => {
+  let n = 0;
+  const tid = () => `x${++n}`;
+  const betting = (names = ['a', 'b']) => ok(adminStart(setup(names), seededRng(1)));
+  const player = (s: GameState, name: string) => s.players.find((p) => p.name === name)!;
+
+  test('賭け受付中は予想屋の一覧が届く。それ以外では届かない', () => {
+    const s = betting();
+    const v = viewFor(s, idOf('a'), false, 0);
+    expect(v.tipsters).toEqual([
+      { id: 'paper', name: '競馬新聞', price: 30, stars: 1 },
+      { id: 'veteran', name: 'ベテラン予想屋', price: 80, stars: 2 },
+      { id: 'master', name: '伝説の予想屋', price: 150, stars: 3 },
+    ]);
+    expect(v.me!.tips).toEqual([]);
+    expect(v.tipResults).toEqual([]);
+    expect(viewFor(setup(['a']), idOf('a'), false, 0).tipsters).toEqual([]);
+    expect(viewFor(ok(adminCloseAndRace(s, seededRng(2), 0)), idOf('a'), false, 0).tipsters).toEqual([]);
+  });
+
+  test('料金を払うと予想(◎○▲)が本人にだけ届き、所持金がその場で減る', () => {
+    let s = betting();
+    s = ok(buyTip(s, idOf('a'), 'veteran'));
+    expect(player(s, 'a').coins).toBe(920);
+    const mine = viewFor(s, idOf('a'), false, 0);
+    expect(mine.me!.coins).toBe(920);
+    expect(mine.me!.tips.length).toBe(1);
+    expect(mine.me!.tips[0].id).toBe('veteran');
+    expect(mine.me!.tips[0].marks).toEqual(s.tips!.veteran.marks);
+    expect(mine.me!.tips[0].marks.length).toBe(3);
+    expect(typeof mine.me!.tips[0].comment).toBe('string');
+    // 買っていない人と先生には、予想の中身は届かない
+    for (const other of [viewFor(s, idOf('b'), false, 0), viewFor(s, null, true, 0)]) {
+      const text = JSON.stringify(other);
+      expect(text).not.toContain('marks');
+      expect(text).not.toContain('comment');
+    }
+    // 2 人目も同じ内容を受け取る(予想屋ごとに 1 レース 1 つ)
+    s = ok(buyTip(s, idOf('b'), 'veteran'));
+    expect(viewFor(s, idOf('b'), false, 0).me!.tips[0].marks).toEqual(mine.me!.tips[0].marks);
+  });
+
+  test('3 人とも買える。同じ予想屋は 1 レースに 1 回だけ', () => {
+    let s = betting();
+    s = ok(buyTip(s, idOf('a'), 'paper'));
+    s = ok(buyTip(s, idOf('a'), 'master'));
+    s = ok(buyTip(s, idOf('a'), 'veteran'));
+    expect(player(s, 'a').coins).toBe(1000 - 30 - 150 - 80);
+    expect(viewFor(s, idOf('a'), false, 0).me!.tips.map((t) => t.id)).toEqual(['paper', 'veteran', 'master']); // 一覧の順
+    const again = buyTip(s, idOf('a'), 'paper');
+    expect(again.error).toBe('bad_bet');
+    expect(again.state).toBe(s);
+  });
+
+  test('買えない場合: 知らない予想屋、受付中でない、未参加、コイン不足', () => {
+    const s = betting();
+    for (const id of ['nobody', '', null, 42, '__proto__', 'constructor', ['paper']]) {
+      const r = buyTip(s, idOf('a'), id);
+      expect(r.error, String(id)).toBe('bad_bet');
+      expect(r.state).toBe(s);
+    }
+    expect(buyTip(s, 'ghost', 'paper').error).toBe('not_allowed');
+    expect(buyTip(setup(['a']), idOf('a'), 'paper').error).toBe('not_allowed');
+    expect(buyTip(ok(adminCloseAndRace(s, seededRng(2), 0)), idOf('a'), 'paper').error).toBe('not_allowed');
+    // 所持金 100 では 150 コインの予想屋は買えない
+    const poor = { ...s, players: s.players.map((p) => (p.name === 'a' ? { ...p, coins: 100 } : p)) };
+    expect(buyTip(poor, idOf('a'), 'master').error).toBe('bad_bet');
+    expect(buyTip(poor, idOf('a'), 'veteran').error).toBeUndefined();
+  });
+
+  test('料金を払うと馬券の合計が所持金を超えるなら買えない。払ったあとは残りの範囲でしか賭けられない', () => {
+    let s = betting();
+    s = ok(placeTicket(s, idOf('a'), 'win', [1], 900, tid));
+    expect(buyTip(s, idOf('a'), 'master').error).toBe('bad_bet'); // 1000 - 150 < 900
+    s = ok(buyTip(s, idOf('a'), 'veteran')); // 1000 - 80 = 920 >= 900
+    expect(player(s, 'a').coins).toBe(920);
+    expect(placeTicket(s, idOf('a'), 'place', [2], 30, tid).error).toBe('bad_bet'); // 900 + 30 > 920
+    s = ok(placeTicket(s, idOf('a'), 'place', [2], 20, tid));
+    // 締め切り: 920 - 920 = 0
+    s = ok(adminCloseAndRace(s, seededRng(2), 0));
+    expect(player(s, 'a').coins).toBe(0);
+  });
+
+  test('レース中・結果画面でも自分の買った予想は見える。次のレースで消え、予想も作り直される', () => {
+    let s = betting();
+    s = ok(buyTip(s, idOf('a'), 'paper'));
+    const first = s.tips!;
+    s = ok(adminCloseAndRace(s, seededRng(2), 0));
+    expect(viewFor(s, idOf('a'), false, 0).me!.tips.length).toBe(1);
+    s = finishRace(s);
+    expect(viewFor(s, idOf('a'), false, 0).me!.tips.length).toBe(1);
+    s = ok(adminNext(s, seededRng(3)));
+    expect(viewFor(s, idOf('a'), false, 0).me!.tips).toEqual([]);
+    expect(player(s, 'a').tips).toEqual([]);
+    expect(s.tips).not.toBe(first);
+    expect(Object.keys(s.tips!).sort()).toEqual(['master', 'paper', 'veteran']);
+  });
+
+  test('結果画面では、3 人の予想と ◎ が 1 着だったかを全員に公開する', () => {
+    let s = betting();
+    s = finishRace(ok(adminCloseAndRace(s, seededRng(2), 0)));
+    const winner = s.race!.order[0];
+    for (const v of [viewFor(s, idOf('b'), false, 0), viewFor(s, null, true, 0)]) {
+      expect(v.tipResults.map((t) => [t.id, t.name])).toEqual([['paper', '競馬新聞'], ['veteran', 'ベテラン予想屋'], ['master', '伝説の予想屋']]);
+      for (const t of v.tipResults) {
+        expect(t.marks).toEqual(s.tips![t.id as 'paper'].marks);
+        expect(t.hit).toBe(t.marks[0] === winner);
+      }
+    }
+  });
+
+  test('リセットと新しい試合で、買った予想は消える。料金は戻らないが所持金は 1,000 に戻る', () => {
+    let s = betting();
+    s = ok(buyTip(s, idOf('a'), 'master'));
+    const r = ok(adminReset(s));
+    expect(player(r, 'a').tips).toEqual([]);
+    expect(player(r, 'a').coins).toBe(1000);
+    expect(r.tips ?? null).toBeNull();
+  });
+
+  test('以前の形式で保存された状態(予想屋なし)でも、view を作れて予想屋を買える', () => {
+    const s = betting();
+    const old = { ...s, players: s.players.map(({ tips: _tips, ...p }) => p) } as unknown as GameState;
+    delete (old as { tips?: unknown }).tips;
+    const m = migrate(old);
+    const v = viewFor(m, idOf('a'), false, 0);
+    expect(v.me!.tips).toEqual([]);
+    expect(v.tipsters.length).toBe(3);
+    const bought = ok(buyTip(m, idOf('a'), 'paper'));
+    expect(viewFor(bought, idOf('a'), false, 0).me!.tips[0].marks.length).toBe(3);
+    // 予想を持たない古い状態のまま結果まで進んでも落ちない
+    const done = finishRace(ok(adminCloseAndRace(m, seededRng(2), 0)));
+    expect(viewFor(done, idOf('a'), false, 0).tipResults.length).toBe(3);
   });
 });

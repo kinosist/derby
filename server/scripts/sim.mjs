@@ -277,6 +277,28 @@ async function runFull() {
       players[1] = fresh;
     }
 
+    // 予想屋: 5 人に 1 人が競馬新聞を買う(料金 30 がその場で引かれ、予想は本人にだけ届く)
+    check(players[0].state.tipsters.length === 3 && players[0].state.tipsters[0].price === 30, '予想屋の一覧が届く');
+    const tipBuyers = players.filter((p, i) => i % 5 === 0 && p.state.me.coins >= 400);
+    const coinsBeforeTip = new Map(tipBuyers.map((p) => [p, p.state.me.coins]));
+    for (const p of tipBuyers) p.send({ t: 'buyTip', id: 'paper' });
+    await Promise.all(tipBuyers.map((p) => p.wait((c) => c.state.me.tips.length === 1, '予想が届く')));
+    for (const p of tipBuyers) {
+      check(p.state.me.coins === coinsBeforeTip.get(p) - 30, '予想屋の料金が引かれる');
+      const tip = p.state.me.tips[0];
+      check(tip.id === 'paper' && tip.marks.length === 3 && new Set(tip.marks).size === 3 && tip.comment.length > 0, '予想の中身');
+    }
+    if (tipBuyers.length > 0) {
+      check(tipBuyers.every((p) => p.state.me.tips[0].marks.join() === tipBuyers[0].state.me.tips[0].marks.join()), '同じ予想屋の予想は全員同じ');
+      tipBuyers[0].send({ t: 'buyTip', id: 'paper' });
+      await tipBuyers[0].expectError('bad_bet', '同じ予想屋を 2 回買う');
+      tipBuyers[0].send({ t: 'buyTip', id: 'nobody' });
+      await tipBuyers[0].expectError('bad_bet', '存在しない予想屋');
+    }
+    await sleep(200);
+    check(players.filter((p) => !tipBuyers.includes(p)).every((p) => p.state.me.tips.length === 0 && !JSON.stringify(p.state).includes('marks')), '買っていない人には予想が届かない');
+    check(!JSON.stringify(admin.state).includes('marks'), '先生にも、受付中は予想の中身が届かない');
+
     // 賭ける。players[6] は古いアプリの形式(単勝 1 点)で送る。
     const plans = players.map((p, i) => {
       const before = p.state.me.coins;
@@ -370,6 +392,10 @@ async function runFull() {
       if (legacy) check(me.lastResult.horse === tickets[0].horses[0], '古い形式の結果の馬番');
     }
     check(s0.bets.every((b) => Array.isArray(b.tickets) && b.tickets.length > 0), '結果画面で全員の馬券の内容が公開される');
+    check(s0.tipResults.length === 3 && s0.tipResults.every((t) => t.marks.length === 3 && t.hit === (t.marks[0] === winner)), '結果画面で予想屋の予想と当たり外れが公開される');
+    if (tipBuyers.length > 0) check(tipBuyers[0].state.me.tips[0].marks.join() === s0.tipResults[0].marks.join(), '買った予想と公開された予想が同じ');
+    players[4].send({ t: 'buyTip', id: 'paper' });
+    await players[4].expectError('not_allowed', '結果画面で予想屋を買う');
     check(s0.bets.length === betCount, '結果画面で全員の賭けが公開される');
     console.log(`第${race}レース: 1着 ${winner}番(${odds}倍)、${betCount} 人が賭け、的中 ${hits} 点、${took}ms`);
 
