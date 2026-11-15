@@ -190,6 +190,25 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('結果: 一部だけ当たって差し引きが損のときは「一部的中」と出る', (tester) async {
+    phone(tester);
+    client.debugSetView(view(Phase.result, results: const Results(staked: 400, delta: -200, tickets: [
+      TicketResult(type: BetType.place, horses: [3], amount: 100, odds: 2.0, won: true, payout: 200),
+      TicketResult(type: BetType.win, horses: [3], amount: 300, odds: 6.4, won: false, payout: 0),
+    ])));
+    await tester.pumpWidget(DerbyApp(client: client));
+    await tester.pump();
+    expect(find.text('一部的中 −200'), findsOneWidget);
+    expect(find.textContaining('的中!'), findsNothing);
+    // 差し引きがちょうど 0 なら「的中! +0」
+    client.debugSetView(view(Phase.result, results: const Results(staked: 200, delta: 0, tickets: [
+      TicketResult(type: BetType.place, horses: [3], amount: 100, odds: 2.0, won: true, payout: 200),
+      TicketResult(type: BetType.win, horses: [3], amount: 100, odds: 6.4, won: false, payout: 0),
+    ])));
+    await tester.pump();
+    expect(find.text('的中! +0'), findsOneWidget);
+  });
+
   testWidgets('結果画面の文言', (tester) async {
     phone(tester);
     client.debugSetView(view(Phase.result, bet: const Ticket(id: 't', type: BetType.win, horses: [1], amount: 300, odds: 2.0), results: const Results(staked: 300, delta: 1230, tickets: [TicketResult(type: BetType.win, horses: [1], amount: 300, odds: 5.1, won: true, payout: 1530)])));

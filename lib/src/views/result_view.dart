@@ -86,8 +86,9 @@ class _MyResult extends StatelessWidget {
     final r = results;
     final (String text, Color color) = switch (r) {
       null => ('見送り', Theme.of(context).colorScheme.onSurfaceVariant),
-      // 1 点でも当たっていれば「的中」。増減は全馬券の合計。
-      _ when r.tickets.any((t) => t.won) => ('的中! ${formatDelta(r.delta)}', const Color(0xFF0F7A35)),
+      // 増減は全馬券の合計。当たった馬券があっても、差し引きが損なら「一部的中」。
+      _ when r.tickets.any((t) => t.won) && r.delta >= 0 => ('的中! ${formatDelta(r.delta)}', const Color(0xFF0F7A35)),
+      _ when r.tickets.any((t) => t.won) => ('一部的中 ${formatDelta(r.delta)}', const Color(0xFFB26A00)),
       _ => ('はずれ ${formatDelta(r.delta)}', const Color(0xFFB3261E)),
     };
     return Padding(

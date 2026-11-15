@@ -167,7 +167,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outl
 @container stage (max-width: 1239px) {
   .field { gap: 2px; }
   .field .row { font-size: 17px; column-gap: 8px; padding: 0 10px 0 4px; border-width: 1px;
-    grid-template-columns: 40px 40px minmax(0, 1fr) 44px 122px 44px 88px 96px 88px 70px 70px; }
+    grid-template-columns: 40px 40px minmax(0, 1fr) 42px 106px 42px 82px 88px 78px 62px 62px; }
   .field .row > :nth-child(9) { display: none; }
   .field .row.head { font-size: 13px; }
   .field .face { width: 40px; height: 40px; }
@@ -227,7 +227,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outl
   .field { gap: 2px; }
   /* 狭い画面では「表情」の文字の列を省く(顔の絵で分かる) */
   .field .row { font-size: 17px; column-gap: 8px; padding: 0 10px 0 4px; border-width: 1px;
-    grid-template-columns: 40px 40px minmax(0, 1fr) 44px 122px 44px 88px 96px 88px 70px 70px; }
+    grid-template-columns: 40px 40px minmax(0, 1fr) 42px 106px 42px 82px 88px 78px 62px 62px; }
   .field .row > :nth-child(9) { display: none; }
   .field .row.head { font-size: 13px; }
   .field .face { width: 40px; height: 40px; }

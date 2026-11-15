@@ -309,7 +309,8 @@ const STAGES = {
       // 全員の賭けを公開する(的中した人を上に、増減の大きい順)
       const all = [...v.bets].sort((a, b) => b.delta - a.delta);
       const winners = all.filter((b) => b.delta > 0).length;
-      right.append(el('h2', '', `的中 ${winners} 人 / はずれ ${all.length - winners} 人`));
+      // 複数の馬券を買えるので、当たり外れではなく差し引きの増減で数える
+      right.append(el('h2', '', `増えた人 ${winners} 人 / 減った人 ${all.filter((b) => b.delta < 0).length} 人`));
       const list = el('ul', 'winners');
       const nameOf = (id) => v.players.find((p) => p.id === id)?.name ?? '(退出)';
       if (all.length === 0) list.append(el('li', '', '賭けた人はいませんでした'));
