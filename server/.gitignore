@@ -1,3 +1,11 @@
+# Node の依存
 node_modules
+
+# wrangler のローカルの状態(ローカルで動かした部屋のデータなど)
 .wrangler
+
+# 秘密にする設定。ローカル用の先生用パスワード(TEACHER_KEY)を書くファイル。絶対にコミットしない
 .dev.vars
+.dev.vars.*
+.env
+.env.*

@@ -43,4 +43,34 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# ---- このプロジェクトで追加したもの ----
+
+# 配布用にビルドしたアプリ(GitHub に置くときは、リポジトリではなく Releases に添付する)
 /dist/
+*.apk
+*.aab
+
+# 秘密にする設定(先生用パスワードや各種キー)。絶対にコミットしない
+.env
+.env.*
+.dev.vars
+.dev.vars.*
+*.pem
+*.p12
+key.properties
+*.keystore
+*.jks
+
+# Cloudflare(wrangler)のローカルの状態と、Node の依存
+.wrangler/
+node_modules/
+
+# 開発ツールの作業用フォルダと個人設定
+.superpowers/
+.claude/settings.local.json
+.vscode/
+
+# OS が作るファイル
+Thumbs.db
+desktop.ini
