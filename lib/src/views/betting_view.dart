@@ -273,18 +273,18 @@ class _HorseRow extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        horse.name,
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                      // 長い馬名は、切らずに縮めて全部見せる
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(horse.name, maxLines: 1, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
                       ),
                       if (horse.hasDetails)
                         Text(
                           _details(horse),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                          style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                          key: Key('details-${horse.no}'),
+                          // 行数を制限しない: 狭い画面では折り返して、予想の手がかりを必ず全部見せる
+                          style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant, height: 1.25),
                         ),
                     ],
                   ),
@@ -308,10 +308,12 @@ class _HorseRow extends StatelessWidget {
     );
   }
 
-  /// 例: 「牡4 482kg(+2) 先行 近走 1-3-2」
+  /// 例: 「気合十分 ・ 近走 1-3-2 ・ 先行 ・ 牡4 482kg(+2)」
+  /// 狭い画面では 2 行に折り返す。予想の手がかりになるもの(表情・近走)を先に置く。
   static String _details(HorseInfo h) {
     final diff = h.weightDiff > 0 ? '+${h.weightDiff}' : (h.weightDiff == 0 ? '±0' : '${h.weightDiff}');
-    return '${h.sex}${h.age} ${h.weight}kg($diff) ${h.style} 近走 ${h.recent.join('-')}';
+    final mood = moodLabels[h.mood];
+    return '${mood == null ? '' : '$mood ・ '}近走 ${h.recent.join('-')} ・ ${h.style} ・ ${h.sex}${h.age} ${h.weight}kg($diff)';
   }
 }
 

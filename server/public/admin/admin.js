@@ -346,7 +346,7 @@ function stopRace() {
 /** 通過時刻の列から、その時点の進み具合(0〜1)を求める。区間内は線形補間。 */
 function horseProgress(times, elapsed) {
   const n = times.length - 1;
-  if (elapsed <= 0) return 0;
+  if (n < 1 || elapsed <= 0) return 0;
   if (elapsed >= times[n]) return 1;
   let i = 0;
   while (times[i + 1] <= elapsed) i++;
@@ -427,7 +427,7 @@ function drawTrack(ctx, w, h, horses, progress, elapsed, distance) {
   // 芝の刈り目(流れて見えるように、コースに固定した縦じま)
   const stripe = 160;
   ctx.fillStyle = 'rgba(255,255,255,0.045)';
-  for (let x = Math.floor(cam / stripe) * stripe; x < cam + w; x += stripe * 2) ctx.fillRect(x, 0, stripe, trackH);
+  for (let x = Math.floor(cam / (stripe * 2)) * stripe * 2; x < cam + w; x += stripe * 2) ctx.fillRect(x, 0, stripe, trackH);
   ctx.strokeStyle = 'rgba(255,255,255,0.35)';
   ctx.lineWidth = 1;
   for (let i = 1; i < lanes; i++) {
@@ -473,6 +473,13 @@ function drawTrack(ctx, w, h, horses, progress, elapsed, distance) {
     drawHorse(ctx, xOf(p), i * laneH + laneH / 2, size, horse.no, p > 0 && p < 1 ? elapsed : 0);
   });
   ctx.restore();
+
+  // 馬名(画面に固定。レーンの左上)
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.font = `600 ${Math.max(12, Math.min(18, laneH * 0.24))}px sans-serif`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  horses.forEach((horse, i) => ctx.fillText(`${horse.no} ${horse.name}`, 8, mapH + i * laneH + 4));
 
   // ---- 全体図(画面に固定): 全馬の位置と残り距離 ----
   ctx.fillStyle = '#14562a';

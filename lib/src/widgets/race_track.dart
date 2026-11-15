@@ -140,7 +140,12 @@ class _TrackPainter extends CustomPainter {
     );
     canvas.drawRect(Rect.fromLTWH(mapR, 5, 3, _mapH - 10), Paint()..color = Colors.white);
     // 遅い馬を先に描き、先頭の馬が上に来るようにする
-    final byProgress = [for (var i = 0; i < progress.length; i++) i]..sort((a, b) => progress[a].compareTo(progress[b]));
+    // 自分の馬の点は、ほかの馬に隠れないよう最後に描く
+    final byProgress = [for (var i = 0; i < progress.length; i++) i]
+      ..sort((a, b) {
+        if ((myHorse == a + 1) != (myHorse == b + 1)) return myHorse == a + 1 ? 1 : -1;
+        return progress[a].compareTo(progress[b]);
+      });
     final border = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2

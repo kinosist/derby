@@ -144,14 +144,41 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outl
 .field .odds small { font-size: 15px; font-weight: 400; color: var(--muted); }
 .field .pop { font-size: 16px; color: var(--muted); white-space: nowrap; }
 
-/* 大きな画面(投影)では、顔と文字を大きくする */
+/*
+ * 出走表の列幅は、中央の領域(.stage)の幅と画面の高さで 4 段階に切り替える。
+ * 列は固定幅なので、幅が足りないと馬名や倍率が欠ける。必ず「その幅で収まる段階」を選ぶ。
+ */
+.stage { container-type: inline-size; container-name: stage; }
+
+/* 大: 幅も高さも十分(投影)。顔と文字を大きくする */
 @media (min-height: 900px) {
-  .field { gap: 6px; }
-  .field .row { grid-template-columns: 84px 48px minmax(0, 1fr) 62px 168px 66px 122px 136px 112px 124px 100px; font-size: 22px; padding: 3px 14px 3px 6px; }
-  .field .face { width: 78px; height: 78px; }
-  .field .hname { font-size: 26px; }
-  .field .odds { font-size: 30px; }
-  .field .no { font-size: 24px; }
+  @container stage (min-width: 1400px) {
+    .field { gap: 6px; }
+    .field .row { grid-template-columns: 84px 48px minmax(0, 1fr) 62px 168px 66px 122px 136px 112px 124px 100px; font-size: 22px; padding: 3px 14px 3px 6px; }
+    .field .face { width: 78px; height: 78px; }
+    .field .hname { font-size: 26px; }
+    .field .odds { font-size: 30px; }
+    .field .no { font-size: 24px; }
+  }
+}
+
+/* 小: 幅が足りないとき。「表情」の文字の列を省く(顔の絵で分かる) */
+@container stage (max-width: 1239px) {
+  .field { gap: 2px; }
+  .field .row { font-size: 17px; column-gap: 8px; padding: 0 10px 0 4px; border-width: 1px;
+    grid-template-columns: 40px 40px minmax(0, 1fr) 44px 122px 44px 88px 96px 88px 70px; }
+  .field .row > :nth-child(9) { display: none; }
+  .field .row.head { font-size: 13px; }
+  .field .face { width: 40px; height: 40px; }
+  .field .hname { font-size: 18px; }
+  .field .odds { font-size: 21px; }
+  .field .mood, .field .pop { font-size: 14px; }
+}
+
+/* 極小: さらに狭いとき。馬体重と人気の列も省く */
+@container stage (max-width: 879px) {
+  .field .row { grid-template-columns: 40px 40px minmax(0, 1fr) 44px 44px 88px 96px 88px; }
+  .field .row > :nth-child(5), .field .row > :nth-child(11) { display: none; }
 }
 
 /* ---- レース ---- */

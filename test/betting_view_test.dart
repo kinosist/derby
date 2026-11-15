@@ -2,6 +2,7 @@ import 'package:derby/src/protocol.dart';
 import 'package:derby/src/views/betting_view.dart';
 import 'package:derby/src/widgets/horse_face.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const horses = [
@@ -144,6 +145,31 @@ void main() {
     await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'この内容で賭ける'));
     expect(bets, [(2, 100)]);
+  });
+
+  testWidgets('幅 320 の画面でも、近走などの詳細が切れずに読める', (tester) async {
+    const worst = HorseInfo(no: 8, name: 'ワクワクジャーニー', odds: 25.9, sex: '牡', age: 4, weight: 518, weightDiff: -10,
+        style: '追込', recent: [10, 12, 11], pop: 8, cond: 1, mood: 'restless', hasDetails: true);
+    const view = RoomView(
+      phase: Phase.betting, raceNo: 1, totalRaces: 5, serverNow: 0, betCount: 0, onlineCount: 1,
+      horses: [worst], players: [], bets: [],
+      course: CourseInfo(distance: 2400, going: '不良'),
+      me: Me(id: 'a', name: 'たろう', coins: 1000, rank: 1),
+    );
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    bets = [];
+    cancels = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: BettingView(view: view, onBet: (h, a) {}, onCancel: () {})),
+    ));
+    expect(tester.takeException(), isNull);
+    final details = tester.renderObject<RenderParagraph>(find.byKey(const Key('details-8')));
+    expect(details.didExceedMaxLines, false, reason: '詳細が 2 行に収まらず切れている');
+    expect(find.textContaining('近走 10-12-11'), findsOneWidget);
+    expect(find.textContaining('そわそわ'), findsOneWidget);
+    expect(find.text('ワクワクジャーニー'), findsOneWidget);
   });
 
   testWidgets('詳細のない出走馬(古いサーバー)は、名前と倍率だけ出る', (tester) async {
