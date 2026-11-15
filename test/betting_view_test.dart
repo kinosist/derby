@@ -352,6 +352,30 @@ void main() {
       expect(tipsBought, isEmpty);
     });
 
+    testWidgets('払ったあとに 10 コイン残らない予想屋は聞けない', (tester) async {
+      await pump(tester, bettingView(coins: 39, sellers: tipsters), table: odds);
+      await open(tester);
+      expect(tester.widget<FilledButton>(find.byKey(const Key('tip-paper'))).onPressed, isNull); // 39 - 30 = 9
+      await pump(tester, bettingView(coins: 40, sellers: tipsters), table: odds);
+      expect(tester.widget<FilledButton>(find.byKey(const Key('tip-paper'))).onPressed, isNotNull); // 40 - 30 = 10
+    });
+
+    testWidgets('聞くボタンは 1 回押すと押せなくなる(二重に送らない)', (tester) async {
+      await pump(tester, bettingView(sellers: tipsters), table: odds);
+      await open(tester);
+      await tester.tap(find.byKey(const Key('tip-paper')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('tip-paper')));
+      await tester.pump();
+      expect(tipsBought, ['paper']);
+      expect(tester.widget<FilledButton>(find.byKey(const Key('tip-paper'))).onPressed, isNull);
+      // ほかの予想屋は押せる
+      expect(tester.widget<FilledButton>(find.byKey(const Key('tip-veteran'))).onPressed, isNotNull);
+      // サーバーから何も返らなかったときは、少し待つとまた押せる
+      await tester.pump(const Duration(seconds: 4));
+      expect(tester.widget<FilledButton>(find.byKey(const Key('tip-paper'))).onPressed, isNotNull);
+    });
+
     testWidgets('予想屋のいないサーバー(古い版)では、予想屋の欄を出さない', (tester) async {
       await pump(tester, bettingView(), table: odds);
       expect(find.textContaining('予想屋'), findsNothing);

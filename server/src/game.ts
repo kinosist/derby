@@ -152,7 +152,8 @@ function migrateState(raw: unknown): GameState {
     return { ...rest, pub, tickets, results, tips: Array.isArray(old.tips) ? old.tips : [] };
   });
   // 予想屋の予想を持たない状態(以前の版で始まったレース)には、いま作って足す
-  const needsTips = !s.tips && s.horses.length > 0 && s.phase !== 'lobby' && s.phase !== 'final';
+  // (賭け受付中だけ。レース中・結果では、結果が決まった後に作った予想を見せても意味がない)
+  const needsTips = !s.tips && s.horses.length > 0 && s.phase === 'betting';
   if (!changed && !needsTips) return s;
   return { ...s, players, tips: needsTips ? makeTips(s.horses, Math.random) : s.tips };
 }
@@ -291,13 +292,15 @@ const staked = (p: Player) => p.tickets.reduce((a, t) => a + t.amount, 0);
 /**
  * 予想屋から予想を買う。料金はその場で引き、戻らない。1 レースにつき各予想屋 1 回。
  * 料金を払うと、買ってある馬券の合計が所持金を超えてしまうなら買えない。
+ * 払ったあとに最低賭け金(10 コイン)が残らない場合も買えない: 10 コイン未満になると次のレースで
+ * 救済の 100 コインがもらえるので、わざと使い切って得をすることができてしまう。
  */
 export function buyTip(s: GameState, playerId: string, tipsterId: unknown): R {
   const p = s.players.find((x) => x.id === playerId);
   if (!p || s.phase !== 'betting') return { state: s, error: 'not_allowed' };
   const tipster = typeof tipsterId === 'string' ? TIPSTERS.find((t) => t.id === tipsterId) : undefined;
-  if (!tipster || !s.tips || p.tips.includes(tipster.id)) return { state: s, error: 'bad_bet' };
-  if (p.coins - tipster.price < staked(p)) return { state: s, error: 'bad_bet' };
+  if (!tipster || !s.tips?.[tipster.id] || p.tips.includes(tipster.id)) return { state: s, error: 'bad_bet' };
+  if (p.coins - tipster.price < Math.max(staked(p), MIN_BET)) return { state: s, error: 'bad_bet' };
   return {
     state: mapPlayer(s, playerId, (x) => ({ ...x, coins: x.coins - tipster.price, tips: [...x.tips, tipster.id] })),
   };
@@ -437,11 +440,12 @@ export function viewFor(s: GameState, playerId: string | null, isAdmin: boolean,
     raceKey: showHorses ? (s.raceKey ?? null) : null,
     horses: showHorses ? s.horses.map(publicHorse) : [],
     course: showHorses ? (s.course ?? null) : null,
-    tipsters: s.phase === 'betting' && s.tips
-      ? TIPSTERS.map((t) => ({ id: t.id, name: t.name, price: t.price, stars: t.stars }))
+    // 予想を持っている予想屋だけを扱う(保存された状態に、一部の予想屋の予想しかない場合がある)
+    tipsters: s.phase === 'betting'
+      ? TIPSTERS.filter((t) => s.tips?.[t.id]).map((t) => ({ id: t.id, name: t.name, price: t.price, stars: t.stars }))
       : [],
-    tipResults: s.phase === 'result' && s.tips && s.race
-      ? TIPSTERS.map((t) => ({
+    tipResults: s.phase === 'result' && s.race
+      ? TIPSTERS.filter((t) => s.tips?.[t.id]).map((t) => ({
           id: t.id, name: t.name, marks: s.tips![t.id].marks, hit: s.tips![t.id].marks[0] === s.race!.order[0],
         }))
       : [],
@@ -462,7 +466,7 @@ export function viewFor(s: GameState, playerId: string | null, isAdmin: boolean,
           results: me.results,
           // 買った予想屋の分だけ、予想の中身を送る
           tips: s.tips && showHorses
-            ? TIPSTERS.filter((t) => me.tips.includes(t.id)).map((t) => ({
+            ? TIPSTERS.filter((t) => me.tips.includes(t.id) && s.tips?.[t.id]).map((t) => ({
                 id: t.id, marks: s.tips![t.id].marks, comment: s.tips![t.id].comment,
               }))
             : [],

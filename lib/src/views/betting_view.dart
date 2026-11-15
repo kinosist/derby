@@ -186,8 +186,8 @@ class _BettingViewState extends State<BettingView> {
                 _TipsterPanel(
                   tipsters: widget.view.tipsters,
                   tips: _me?.tips ?? const [],
-                  // 料金を払っても、買ってある馬券の合計を下回らない予想屋だけ聞ける
-                  available: _coins - (_me?.staked ?? 0),
+                  coins: _coins,
+                  staked: _me?.staked ?? 0,
                   onBuy: widget.onBuyTip,
                 ),
               for (final h in widget.view.horses)
@@ -558,12 +558,19 @@ class _HorseRow extends StatelessWidget {
 
 /// 予想屋の欄。開くと 3 人が並び、料金を払うと ◎○▲ を教えてくれる。聞いた予想はここに出続ける。
 class _TipsterPanel extends StatefulWidget {
-  const _TipsterPanel({required this.tipsters, required this.tips, required this.available, required this.onBuy});
+  const _TipsterPanel({
+    required this.tipsters,
+    required this.tips,
+    required this.coins,
+    required this.staked,
+    required this.onBuy,
+  });
   final List<TipsterInfo> tipsters;
   final List<Tip> tips;
+  final int coins;
 
-  /// 予想屋に払えるコイン(所持金 − 買ってある馬券の合計)
-  final int available;
+  /// 買ってある馬券の合計
+  final int staked;
   final void Function(String tipsterId) onBuy;
 
   @override
@@ -572,6 +579,36 @@ class _TipsterPanel extends StatefulWidget {
 
 class _TipsterPanelState extends State<_TipsterPanel> {
   late bool _open = widget.tips.isNotEmpty; // 聞いた予想があれば、最初から開いておく
+
+  /// 「聞く」を押して、サーバーの返事を待っている予想屋(二重に送らないため)
+  final _pending = <String>{};
+  Timer? _pendingTimer;
+
+  /// 料金を払えるか: 払ったあとに、買ってある馬券の合計と最低賭け金(10 コイン)が残ること。
+  /// (10 コイン未満まで使い切ると次のレースで 100 コインもらえてしまうので、サーバーも断る)
+  bool _canAfford(TipsterInfo t) => widget.coins - t.price >= (widget.staked > _minBet ? widget.staked : _minBet);
+
+  void _buy(TipsterInfo t) {
+    setState(() => _pending.add(t.id));
+    widget.onBuy(t.id);
+    // 返事が来なかったとき(断られた、通信が切れた)は、少し待ってまた押せるようにする
+    _pendingTimer?.cancel();
+    _pendingTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(_pending.clear);
+    });
+  }
+
+  @override
+  void didUpdateWidget(_TipsterPanel old) {
+    super.didUpdateWidget(old);
+    _pending.removeWhere((id) => widget.tips.any((t) => t.id == id));
+  }
+
+  @override
+  void dispose() {
+    _pendingTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -653,8 +690,8 @@ class _TipsterPanelState extends State<_TipsterPanel> {
                   backgroundColor: const Color(0xFF8A6200),
                   textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                 ),
-                onPressed: widget.available >= t.price ? () => widget.onBuy(t.id) : null,
-                child: Text(widget.available >= t.price ? '${t.price}コインで聞く' : '${t.price}コイン(コインが足りません)'),
+                onPressed: _canAfford(t) && !_pending.contains(t.id) ? () => _buy(t) : null,
+                child: Text(_canAfford(t) ? '${t.price}コインで聞く' : '${t.price}コイン(コインが足りません)'),
               ),
             ),
         ],

@@ -230,6 +230,19 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('「退出する」のメニューは、試合が始まる前(参加受付中)だけ出る', (tester) async {
+    phone(tester);
+    client.debugSetView(view(Phase.lobby));
+    await tester.pumpWidget(DerbyApp(client: client));
+    await tester.pump();
+    expect(find.byIcon(Icons.more_vert), findsOneWidget);
+    for (final phase in [Phase.betting, Phase.racing, Phase.result, Phase.finalResult]) {
+      client.debugSetView(view(phase));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(find.byIcon(Icons.more_vert), findsNothing, reason: '$phase');
+    }
+  });
+
   testWidgets('結果画面の文言', (tester) async {
     phone(tester);
     client.debugSetView(view(Phase.result, bet: const Ticket(id: 't', type: BetType.win, horses: [1], amount: 300, odds: 2.0), results: const Results(staked: 300, delta: 1230, tickets: [TicketResult(type: BetType.win, horses: [1], amount: 300, odds: 5.1, won: true, payout: 1530)])));

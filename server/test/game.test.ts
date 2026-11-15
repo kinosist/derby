@@ -832,4 +832,45 @@ describe('予想屋', () => {
     const done = finishRace(ok(adminCloseAndRace(m, seededRng(2), 0)));
     expect(viewFor(done, idOf('a'), false, 0).tipResults.length).toBe(3);
   });
+
+  test('料金を払って所持金を 10 コイン未満にすることはできない(救済の 100 コインで得をさせない)', () => {
+    const s = betting();
+    const withCoinsA = (c: number) => ({ ...s, players: s.players.map((p) => (p.name === 'a' ? { ...p, coins: c } : p)) });
+    for (const c of [30, 35, 39]) expect(buyTip(withCoinsA(c), idOf('a'), 'paper').error, `所持金 ${c}`).toBe('bad_bet');
+    const ok40 = ok(buyTip(withCoinsA(40), idOf('a'), 'paper'));
+    expect(player(ok40, 'a').coins).toBe(10);
+    expect(buyTip(withCoinsA(89), idOf('a'), 'veteran').error).toBe('bad_bet');
+    expect(buyTip(withCoinsA(90), idOf('a'), 'veteran').error).toBeUndefined();
+  });
+
+  test('予想の一部が欠けた状態でも view を作れる(予想屋が増えた場合など)', () => {
+    let s = betting();
+    s = ok(buyTip(s, idOf('a'), 'paper'));
+    s = ok(buyTip(s, idOf('a'), 'master'));
+    const partial = { ...s, tips: { paper: s.tips!.paper } } as unknown as GameState;
+    const v = viewFor(partial, idOf('a'), false, 0);
+    expect(v.me!.tips.map((t) => t.id)).toEqual(['paper']);
+    const done = finishRace(ok(adminCloseAndRace(partial, seededRng(2), 0)));
+    expect(viewFor(done, idOf('a'), false, 0).tipResults.map((t) => t.id)).toEqual(['paper']);
+    // 欠けている予想屋は買えない
+    expect(buyTip(partial, idOf('b'), 'veteran').error).toBe('bad_bet');
+  });
+
+  test('migrate: レース中・結果の状態には、あとから予想を作らない(結果が決まった後の予想は意味がない)', () => {
+    const s = betting();
+    const strip = (x: GameState) => {
+      const o = { ...x, players: x.players.map(({ tips: _t, ...p }) => p) } as unknown as GameState;
+      delete (o as { tips?: unknown }).tips;
+      return o;
+    };
+    const racing = ok(adminCloseAndRace(s, seededRng(2), 0));
+    for (const old of [strip(racing), strip(finishRace(racing))]) {
+      const m = migrate(old);
+      expect(m.tips ?? null).toBeNull();
+      expect(viewFor(m, idOf('a'), false, 0).tipResults).toEqual([]);
+      expect(m.players.every((p) => Array.isArray(p.tips))).toBe(true);
+    }
+    // 賭け受付中の状態には作る(そのレースから予想屋を使える)
+    expect(Object.keys(migrate(strip(s)).tips!).length).toBe(3);
+  });
 });

@@ -108,11 +108,16 @@ class _Header extends StatelessWidget {
                       style: const TextStyle(color: Color(0xFF201800), fontWeight: FontWeight.w700),
                     ),
                   ),
-                  PopupMenuButton<String>(
-                    icon: Icon(Icons.more_vert, color: onColor),
-                    onSelected: (_) => onLeave(),
-                    itemBuilder: (context) => const [PopupMenuItem(value: 'leave', child: Text('退出する'))],
-                  ),
+                  // 退出できるのは試合が始まる前だけ(名前の打ち間違いを直すため)。
+                  // 試合中に別の名前で入り直すと、新しい 1,000 コインで予想屋だけ聞く、といったことができてしまう。
+                  if (view.phase == Phase.lobby)
+                    PopupMenuButton<String>(
+                      icon: Icon(Icons.more_vert, color: onColor),
+                      onSelected: (_) => onLeave(),
+                      itemBuilder: (context) => const [PopupMenuItem(value: 'leave', child: Text('退出する'))],
+                    )
+                  else
+                    const SizedBox(width: 12, height: 48),
                 ],
               ),
               Padding(
