@@ -192,7 +192,9 @@ async function runFull() {
     for (const p of players) {
       check(p.state.race === null && p.state.bets.length === 0, '賭け受付中に結果が見えない');
       check(p.state.horses.length === 8, '出走馬 8 頭');
-      check(p.state.horses.every((h) => !('prob' in h)), '勝率は送られない');
+      check(p.state.horses.every((h) => !('prob' in h) && !('baseProb' in h) && !('trueCond' in h)), '勝率と本当の調子は送られない');
+      check(p.state.horses.every((h) => h.cond >= 1 && h.cond <= 5 && typeof h.mood === 'string' && h.recent.length === 3), '出走表の項目がそろっている');
+      check(p.state.course && p.state.course.distance >= 1200, '距離と馬場が届く');
     }
 
     if (race === 1) {
@@ -260,9 +262,11 @@ async function runFull() {
     }
 
     // 結果(自動で進む)
-    await Promise.all(players.map((p) => p.waitPhase('result', race, 25000)));
+    const durationMs = players[0].state.race.durationMs;
+    check(durationMs >= 22000 && durationMs <= 35000, `レースの長さは 22〜35 秒(実際: ${durationMs}ms)`);
+    await Promise.all(players.map((p) => p.waitPhase('result', race, 45000)));
     const took = Date.now() - t0;
-    check(took >= 19000 && took <= 23000, `レースは約 20 秒(実際: ${took}ms)`);
+    check(took >= durationMs - 500 && took <= durationMs + 3000, `レースは予定の時間で終わる(予定 ${durationMs}ms、実際 ${took}ms)`);
     const s0 = players[0].state;
     const winner = s0.race.order[0];
     const odds = s0.horses.find((h) => h.no === winner).odds;

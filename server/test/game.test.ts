@@ -300,7 +300,19 @@ describe('viewFor', () => {
     expect(v.players.every((p) => p.hasBet === false)).toBe(true);
     expect(v.betCount).toBe(1);
     expect(v.onlineCount).toBe(2);
-    v.horses.forEach((h) => expect(Object.keys(h).sort()).toEqual(['name', 'no', 'odds']));
+    v.horses.forEach((h) =>
+      expect(Object.keys(h).sort()).toEqual(
+        ['age', 'cond', 'mood', 'name', 'no', 'odds', 'pop', 'recent', 'sex', 'style', 'weight', 'weightDiff'],
+      ),
+    );
+    // 本当の調子と勝率は、先生にも生徒にも送らない
+    for (const view of [v, viewFor(s, null, true, 0)]) {
+      const text = JSON.stringify(view);
+      expect(text).not.toContain('trueCond');
+      expect(text).not.toContain('rob"'); // prob / baseProb
+    }
+    expect([1200, 1400, 1600, 1800, 2000, 2400]).toContain(v.course!.distance);
+    expect(['良', '稍重', '重', '不良']).toContain(v.course!.going);
     const admin = viewFor(s, null, true, 0);
     expect(admin.me).toBeNull();
     expect(admin.isAdmin).toBe(true);
@@ -324,7 +336,8 @@ describe('viewFor', () => {
     s = ok(adminCloseAndRace(s, seededRng(2), 0));
     const racing = viewFor(s, idOf('b'), false, 0);
     expect(racing.race!.order.length).toBe(8);
-    expect(racing.race!.durationMs).toBe(20000);
+    expect(racing.race!.durationMs).toBe(Math.max(...racing.race!.times.map((t) => t[10])) + 1500);
+    expect(racing.course).not.toBeNull();
     expect(racing.bets).toEqual([]);
     s = finishRace(s);
     const result = viewFor(s, idOf('b'), false, 0);
@@ -339,6 +352,7 @@ describe('viewFor', () => {
 
   test('lobby と final では horses が空', () => {
     expect(viewFor(setup(['a']), null, false, 0).horses).toEqual([]);
+    expect(viewFor(setup(['a']), null, false, 0).course).toBeNull();
   });
 
   test('存在しない id の me は null', () => {
@@ -429,5 +443,15 @@ describe('最終レビューの指摘', () => {
     expect(after).not.toBe('another-device');
     const mine = viewFor(s, 'another-device', false, 0).players.find((p) => p.name === 'b')!.id;
     expect(mine).not.toBe(after);
+  });
+});
+
+describe('以前の形式で保存された状態', () => {
+  test('course を持たない保存済みの状態でも view を作れる', () => {
+    const old = { ...setup(['a']) } as Record<string, unknown>;
+    delete old.course;
+    const v = viewFor(old as unknown as GameState, idOf('a'), false, 0);
+    expect(v.course).toBeNull();
+    expect(v.phase).toBe('lobby');
   });
 });

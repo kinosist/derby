@@ -1,9 +1,9 @@
 // ゲームの状態と状態遷移(純粋関数)。引数の state は変更せず、新しい state を返す。
 
 import {
-  drawOrder, makeField, makeTimes, payout,
-  HORSES, MAX_PLAYERS, MIN_BET, NAME_MAX, RACE_DURATION_MS, RESCUE_COINS, START_COINS, TOTAL_RACES,
-  type Horse, type Rng,
+  drawOrder, makeCourse, makeField, makeTimes, payout, raceDuration,
+  HORSES, MAX_PLAYERS, MIN_BET, NAME_MAX, RESCUE_COINS, START_COINS, TOTAL_RACES,
+  type Course, type Horse, type Rng,
 } from './rules';
 
 export type Phase = 'lobby' | 'betting' | 'racing' | 'result' | 'final';
@@ -33,9 +33,17 @@ export type GameState = {
   phase: Phase;
   raceNo: number;
   horses: Horse[];
+  /** 距離と馬場。以前の形式で保存された状態には無いことがある。 */
+  course?: Course | null;
   players: Player[];
   race: Race | null;
 };
+
+/** 出走表に出す馬の情報(勝率と本当の調子は含めない) */
+export type PublicHorse = Pick<
+  Horse,
+  'no' | 'name' | 'odds' | 'sex' | 'age' | 'weight' | 'weightDiff' | 'style' | 'recent' | 'pop' | 'cond' | 'mood'
+>;
 
 export type R = { state: GameState; error?: ErrorCode };
 
@@ -44,7 +52,8 @@ export type View = {
   raceNo: number;
   totalRaces: number;
   serverNow: number;
-  horses: { no: number; name: string; odds: number }[];
+  horses: PublicHorse[];
+  course: Course | null;
   players: { id: string; name: string; coins: number; online: boolean; rank: number; hasBet: boolean }[];
   betCount: number;
   onlineCount: number;
@@ -55,7 +64,7 @@ export type View = {
 };
 
 export function newGame(): GameState {
-  return { phase: 'lobby', raceNo: 0, horses: [], players: [], race: null };
+  return { phase: 'lobby', raceNo: 0, horses: [], course: null, players: [], race: null };
 }
 
 /** 前後の空白を除き、制御文字を空白に置き換える。1〜12 文字(コードポイント)でなければ null。 */
@@ -140,6 +149,7 @@ function openBetting(s: GameState, raceNo: number, rng: Rng): GameState {
     phase: 'betting',
     raceNo,
     horses: makeField(rng),
+    course: makeCourse(rng),
     race: null,
     players: s.players.map((p) => ({
       ...p,
@@ -158,11 +168,12 @@ export function adminStart(s: GameState, rng: Rng): R {
 export function adminCloseAndRace(s: GameState, rng: Rng, now: number): R {
   if (s.phase !== 'betting') return { state: s, error: 'not_allowed' };
   const order = drawOrder(s.horses, rng);
+  const times = makeTimes(order, s.horses, s.course ?? { distance: 1600, going: '良' }, rng);
   return {
     state: {
       ...s,
       phase: 'racing',
-      race: { startedAt: now, durationMs: RACE_DURATION_MS, order, times: makeTimes(order, rng) },
+      race: { startedAt: now, durationMs: raceDuration(times), order, times },
       players: s.players.map((p) => (p.bet ? { ...p, coins: p.coins - p.bet.amount } : p)),
     },
   };
@@ -200,6 +211,7 @@ function backToLobby(s: GameState): GameState {
     phase: 'lobby',
     raceNo: 0,
     horses: [],
+    course: null,
     race: null,
     players: s.players.map((p) => ({ ...p, coins: START_COINS, bet: null, lastResult: null })),
   };
@@ -247,7 +259,8 @@ export function viewFor(s: GameState, playerId: string | null, isAdmin: boolean,
     raceNo: s.raceNo,
     totalRaces: TOTAL_RACES,
     serverNow: now,
-    horses: showHorses ? s.horses.map((h) => ({ no: h.no, name: h.name, odds: h.odds })) : [],
+    horses: showHorses ? s.horses.map(publicHorse) : [],
+    course: showHorses ? (s.course ?? null) : null,
     players: sorted.map((p) => ({
       id: shownId(p),
       name: p.name,
@@ -269,5 +282,13 @@ export function viewFor(s: GameState, playerId: string | null, isAdmin: boolean,
             .map((p) => ({ playerId: shownId(p), horse: p.bet!.horse, amount: p.bet!.amount, delta: p.lastResult!.delta }))
         : [],
     isAdmin,
+  };
+}
+
+function publicHorse(h: Horse): PublicHorse {
+  return {
+    no: h.no, name: h.name, odds: h.odds,
+    sex: h.sex, age: h.age, weight: h.weight, weightDiff: h.weightDiff,
+    style: h.style, recent: h.recent, pop: h.pop, cond: h.cond, mood: h.mood,
   };
 }
