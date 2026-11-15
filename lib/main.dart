@@ -5,9 +5,10 @@ import 'src/room_client.dart';
 import 'src/screens/game_screen.dart';
 import 'src/screens/join_screen.dart';
 
-/// 接続先。ビルド時に --dart-define=SERVER_URL=wss://…/ws で指定する。
-/// 既定値は、エミュレータから開発 PC のローカルサーバーを指すアドレス。
-const serverUrl = String.fromEnvironment('SERVER_URL', defaultValue: 'ws://10.0.2.2:8787/ws');
+/// 接続先。何も指定しなければ、公開中のサーバーにつながる。
+/// 開発 PC のローカルサーバーにつなぐときは、実行時に
+/// --dart-define=SERVER_URL=ws://10.0.2.2:8787/ws を指定する(10.0.2.2 はエミュレータから見た開発 PC)。
+const serverUrl = String.fromEnvironment('SERVER_URL', defaultValue: 'wss://derby.versailles747.workers.dev/ws');
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();

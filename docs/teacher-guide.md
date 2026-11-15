@@ -77,16 +77,10 @@ flutter build apk --release --target-platform android-x64 --dart-define=SERVER_U
 ### 方法 B: 生徒が Android Studio でプロジェクトを開いて実行する
 
 1. 生徒の PC にこのプロジェクトのフォルダを配ります。
-2. Android Studio で開き、メニューの Run → Edit Configurations… を開きます。
-3. 「Additional run args」に次を入れます。
+2. Android Studio で開き、エミュレータを選んで実行します。
 
-   ```
-   --dart-define=SERVER_URL=wss://derby.<あなたの名前>.workers.dev/ws
-   ```
-
-4. エミュレータを選んで実行します。
-
-この指定を忘れると、アプリは開発用のアドレスにつなごうとして「再接続中…」のままになります。
+接続先を指定しなくても、公開中のサーバー(`wss://derby.versailles747.workers.dev/ws`)につながります。
+別のサーバーにつなぎたいときだけ、Run → Edit Configurations… の「Additional run args」に `--dart-define=SERVER_URL=wss://<別のアドレス>/ws` を入れます。
 
 ---
 

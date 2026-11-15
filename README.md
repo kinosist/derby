@@ -16,8 +16,9 @@ npm install
 npm run dev
 
 # 管理ページ: http://127.0.0.1:8787/admin
-# アプリ(エミュレータからは既定で ws://10.0.2.2:8787/ws につながる)
-flutter run
+# アプリ: 何も指定しないと公開中のサーバー(wss://derby.versailles747.workers.dev/ws)につながる。
+# ローカルのサーバーにつなぐときは接続先を指定する(10.0.2.2 はエミュレータから見た開発 PC)。
+flutter run --dart-define=SERVER_URL=ws://10.0.2.2:8787/ws
 ```
 
 ## テスト
