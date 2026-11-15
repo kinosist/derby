@@ -111,19 +111,21 @@ class _Header extends StatelessWidget {
               ),
               Padding(
                 padding: const EdgeInsets.only(right: 12),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    Flexible(
-                      child: Text('${me.name}: ',
-                          overflow: TextOverflow.ellipsis, style: TextStyle(color: onColor, fontSize: 16)),
-                    ),
-                    Text('${formatCoins(me.coins)}コイン',
-                        style: TextStyle(color: onColor, fontSize: 24, fontWeight: FontWeight.w900)),
-                    const SizedBox(width: 8),
-                    Text('(${me.rank}位 / ${view.players.length}人)', style: TextStyle(color: onColor, fontSize: 16)),
-                  ],
+                // 長い名前や大きな金額でもはみ出さないよう、収まらないときは全体を縮める
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text('${me.name}: ', style: TextStyle(color: onColor, fontSize: 16)),
+                      Text('${formatCoins(me.coins)}コイン',
+                          style: TextStyle(color: onColor, fontSize: 24, fontWeight: FontWeight.w900)),
+                      const SizedBox(width: 8),
+                      Text('(${me.rank}位 / ${view.players.length}人)', style: TextStyle(color: onColor, fontSize: 16)),
+                    ],
+                  ),
                 ),
               ),
             ],
