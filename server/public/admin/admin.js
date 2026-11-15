@@ -231,7 +231,7 @@ const STAGES = {
       const stage = $('stage');
       const c = v.course;
       stage.append(el('h2', '', c ? `出走表  芝 ${c.distance}m  馬場: ${c.going}` : '出走表'));
-      stage.append(el('p', 'hint', '1着になる馬を当てます。倍率は実力で決まります。今日の「調子」と「表情」が良い馬は、倍率より勝ちやすくなります(どちらも、たまに当てになりません)。'));
+      stage.append(el('p', 'hint', '馬券は 単勝(1着)・複勝(3着以内)・馬連(1着と2着の2頭)・3連単(1〜3着を順番どおり)の4種類。倍率は実力で決まります。「調子」と「表情」が良い馬は、倍率より来やすくなります(どちらも、たまに当てになりません)。'));
       const table = el('div', 'field');
       const head = el('div', 'row head');
       for (const t of ['', '', '馬名', '性齢', '馬体重', '脚質', '近走', '調子', '表情', '単勝', '複勝', '人気']) head.append(el('span', '', t));

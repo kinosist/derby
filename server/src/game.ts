@@ -99,9 +99,21 @@ const PHASES: Phase[] = ['lobby', 'betting', 'racing', 'result', 'final'];
  * その結果(lastResult)を持っていた。読めない値なら新しい試合にする。
  */
 export function migrate(raw: unknown): GameState {
+  try {
+    return migrateState(raw);
+  } catch {
+    return newGame(); // 想定外の形。部屋が起動できなくなるより、新しい試合にする。
+  }
+}
+
+function migrateState(raw: unknown): GameState {
   if (typeof raw !== 'object' || raw === null) return newGame();
   const s = raw as GameState;
   if (!PHASES.includes(s.phase) || !Array.isArray(s.players) || !Array.isArray(s.horses)) return newGame();
+  const validPlayer = (p: unknown) =>
+    typeof p === 'object' && p !== null &&
+    typeof (p as Player).id === 'string' && typeof (p as Player).name === 'string' && typeof (p as Player).coins === 'number';
+  if (!s.players.every(validPlayer)) return newGame();
   const oddsOf = (no: number) => s.horses.find((h) => h.no === no)?.odds ?? 0;
   let changed = false;
   const players = s.players.map((p, i) => {
@@ -124,7 +136,9 @@ export function migrate(raw: unknown): GameState {
             }],
           }
         : null;
-    return { ...rest, pub: typeof old.pub === 'string' ? old.pub : `pub-${i}-${old.id}`.slice(0, 64), tickets, results };
+    // 公開用の id は全員に送られる。本当の id から作ると乗っ取りに使えてしまうので、無関係な乱数にする。
+    const pub = typeof old.pub === 'string' ? old.pub : `pub-${i}-${Math.random().toString(36).slice(2, 12)}`;
+    return { ...rest, pub, tickets, results };
   });
   return changed ? { ...s, players } : s;
 }

@@ -45,6 +45,8 @@ export class Room extends DurableObject<Env> {
       // 以前の版で保存された状態は、今の形に直してから使う
       const stored = await ctx.storage.get<unknown>('state');
       this.state = stored === undefined ? newGame() : migrate(stored);
+      // 形を直したら、すぐ保存する(起動のたびに直し直さないため)
+      if (stored !== undefined && this.state !== stored) await ctx.storage.put('state', this.state);
       // 休止・再起動をまたいで残っている接続と、参加者の接続状態を突き合わせる
       const connected = new Set<string>();
       for (const ws of ctx.getWebSockets()) {

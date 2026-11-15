@@ -331,6 +331,9 @@ void main() {
       expect(transports[0].sent.last, {'t': 'bet', 'type': 'win', 'horses': [2], 'amount': 100});
       client.cancelTicket('t7');
       expect(transports[0].sent.last, {'t': 'cancelBet', 'id': 't7'});
+      // 新しいサーバーでは、id が 'legacy' の馬券(古いアプリで買ったもの)も 1 点だけ取り消す
+      client.cancelTicket('legacy');
+      expect(transports[0].sent.last, {'t': 'cancelBet', 'id': 'legacy'});
     });
   });
 

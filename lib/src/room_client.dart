@@ -140,8 +140,8 @@ class RoomClient extends ChangeNotifier {
   /// 馬券を 1 点取り消す。
   void cancelTicket(String ticketId) {
     _lastError = null;
-    // 'legacy' は古いサーバーの単勝 1 点。id を指定せずに取り消す。
-    _send(ticketId == 'legacy' ? {'t': 'cancelBet'} : {'t': 'cancelBet', 'id': ticketId});
+    // 古いサーバー(raceKey を送らない)は単勝 1 点だけなので、id を指定せずに取り消す。
+    _send(_view?.raceKey == null ? {'t': 'cancelBet'} : {'t': 'cancelBet', 'id': ticketId});
     _notify();
   }
 

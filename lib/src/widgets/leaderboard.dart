@@ -46,7 +46,8 @@ class Leaderboard extends StatelessWidget {
               if (bet != null) ...[
                 const SizedBox(width: 6),
                 // 単勝 1 点なら馬番、そうでなければ点数を出す
-                if (bet.tickets.isEmpty || (bet.tickets.length == 1 && bet.tickets[0].type == BetType.win))
+                if (bet.tickets.isEmpty ||
+                    (bet.tickets.length == 1 && bet.tickets[0].type == BetType.win && bet.tickets[0].horses.isNotEmpty))
                   HorseBadge(bet.tickets.isEmpty ? bet.horse : bet.tickets[0].horses[0], size: 22)
                 else
                   Text('${bet.tickets.length}点', style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant)),

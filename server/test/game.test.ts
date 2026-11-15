@@ -678,4 +678,22 @@ describe('馬券の種類と複数購入', () => {
     expect(migrate(null).phase).toBe('lobby');
     expect(migrate({ phase: 'weird' }).phase).toBe('lobby');
   });
+
+  test('migrate: 公開用の id を持たない参加者には、本当の id と無関係な値を振る', () => {
+    const s = migrate({
+      phase: 'lobby', raceNo: 0, horses: [], race: null,
+      players: [{ id: 'secret-id-123', name: 'A', coins: 1000, online: false, bet: null, lastResult: null }],
+    });
+    expect(s.players[0].pub).not.toContain('secret-id-123');
+    expect(s.players[0].pub.length).toBeGreaterThanOrEqual(8);
+    expect(JSON.stringify(viewFor(s, null, false, 0))).not.toContain('secret-id-123');
+  });
+
+  test('migrate: 参加者の一覧が壊れていても落ちず、新しい試合にする', () => {
+    for (const players of [[null], ['x'], [42], [{ id: 1 }], [{ id: 'a', name: 'A', coins: 'many' }]]) {
+      const s = migrate({ phase: 'lobby', raceNo: 0, horses: [], race: null, players });
+      expect(s.phase).toBe('lobby');
+      expect(s.players).toEqual([]);
+    }
+  });
 });
