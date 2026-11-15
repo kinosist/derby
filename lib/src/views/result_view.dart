@@ -65,6 +65,35 @@ class ResultView extends StatelessWidget {
               ],
             ),
           ),
+        if (view.tipResults.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                for (final t in view.tipResults)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF6D6),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFE0A100)),
+                    ),
+                    // 予想屋の予想と、◎ が 1 着だったか
+                    child: Text(
+                      '${t.name} ${tipMarksText(t.marks)} ${t.hit ? '的中' : 'はずれ'}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.2,
+                        fontWeight: t.hit ? FontWeight.w800 : FontWeight.w500,
+                        color: t.hit ? const Color(0xFF0B5A27) : const Color(0xFF3D2B00),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         const SizedBox(height: 8),
         const Divider(height: 1),
         Expanded(child: Leaderboard(players: view.players, meId: view.me?.id, bets: view.bets)),

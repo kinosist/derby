@@ -28,7 +28,21 @@ final odds = OddsTable(
   },
 );
 
-RoomView bettingView({int coins = 1400, List<Ticket> tickets = const [], String? raceKey = 'r1', List<HorseInfo>? field}) => RoomView(
+const tipsters = [
+  TipsterInfo(id: 'paper', name: '競馬新聞', price: 30, stars: 1),
+  TipsterInfo(id: 'veteran', name: 'ベテラン予想屋', price: 80, stars: 2),
+  TipsterInfo(id: 'master', name: '伝説の予想屋', price: 150, stars: 3),
+];
+
+RoomView bettingView({
+  int coins = 1400,
+  List<Ticket> tickets = const [],
+  String? raceKey = 'r1',
+  List<HorseInfo>? field,
+  List<TipsterInfo> sellers = const [],
+  List<Tip> tips = const [],
+}) =>
+    RoomView(
       phase: Phase.betting,
       raceNo: 3,
       totalRaces: 5,
@@ -37,14 +51,16 @@ RoomView bettingView({int coins = 1400, List<Ticket> tickets = const [], String?
       onlineCount: 1,
       raceKey: raceKey,
       horses: field ?? horses,
+      tipsters: sellers,
       players: [PlayerInfo(id: 'a', name: 'たろう', coins: coins, rank: 1, online: true)],
       bets: const [],
-      me: Me(id: 'a', name: 'たろう', coins: coins, rank: 1, tickets: tickets),
+      me: Me(id: 'a', name: 'たろう', coins: coins, rank: 1, tickets: tickets, tips: tips),
     );
 
 void main() {
   late List<String> bought;
   late List<String> cancelled;
+  late List<String> tipsBought;
 
   Future<void> pump(WidgetTester tester, RoomView view, {OddsTable? table, Size size = const Size(1080, 2340), double ratio = 3.0}) async {
     tester.view.physicalSize = size;
@@ -57,6 +73,7 @@ void main() {
           odds: table,
           onBuy: (type, horses, amount) => bought.add('${type.name} ${horses.join('-')} $amount'),
           onCancel: cancelled.add,
+          onBuyTip: tipsBought.add,
         ),
       ),
     ));
@@ -65,6 +82,7 @@ void main() {
   setUp(() {
     bought = [];
     cancelled = [];
+    tipsBought = [];
   });
 
   String amount(WidgetTester tester) => tester.widget<Text>(find.byKey(const Key('betAmount'))).data!;
@@ -282,6 +300,73 @@ void main() {
     await tapHorse(tester, 2);
     await tester.tap(find.widgetWithText(FilledButton, 'この馬券を買う'));
     expect(bought, ['win 2 100']);
+  });
+
+  group('予想屋', () {
+    Future<void> open(WidgetTester tester) async {
+      await tester.tap(find.textContaining('予想屋に聞く'));
+      await tester.pump();
+    }
+
+    testWidgets('一覧を開くと 3 人の名前・精度・料金が出て、料金を払って聞ける', (tester) async {
+      await pump(tester, bettingView(sellers: tipsters), table: odds);
+      expect(find.text('競馬新聞'), findsNothing); // 最初は閉じている
+      await open(tester);
+      expect(find.text('競馬新聞'), findsOneWidget);
+      expect(find.text('ベテラン予想屋'), findsOneWidget);
+      expect(find.text('伝説の予想屋'), findsOneWidget);
+      expect(find.text('★☆☆'), findsOneWidget);
+      expect(find.text('★★★'), findsOneWidget);
+      expect(find.textContaining('30コインで聞く'), findsOneWidget);
+      expect(find.textContaining('150コインで聞く'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('tip-veteran')));
+      expect(tipsBought, ['veteran']);
+    });
+
+    testWidgets('聞いた予想は ◎○▲ とひとことで出て、出走表の馬にも印が付く。同じ予想屋はもう聞けない', (tester) async {
+      const tips = [Tip(id: 'paper', marks: [2, 5, 1], comment: '今日はこの馬で決まり!')];
+      await pump(tester, bettingView(sellers: tipsters, tips: tips), table: odds);
+      // 聞いた予想があるときは、最初から開いている
+      expect(find.text('競馬新聞'), findsOneWidget);
+      expect(find.textContaining('◎2 ○5 ▲1'), findsOneWidget);
+      expect(find.textContaining('今日はこの馬で決まり!'), findsOneWidget);
+      expect(find.byKey(const Key('tip-paper')), findsNothing);
+      expect(find.byKey(const Key('tip-master')), findsOneWidget);
+      // 出走表の 2 番に ◎、5 番に ○、1 番に ▲
+      expect(find.byKey(const Key('marks-2')), findsOneWidget);
+      expect(tester.widget<Text>(find.byKey(const Key('marks-2'))).data, contains('◎'));
+      expect(tester.widget<Text>(find.byKey(const Key('marks-5'))).data, contains('○'));
+      expect(tester.widget<Text>(find.byKey(const Key('marks-1'))).data, contains('▲'));
+      expect(find.byKey(const Key('marks-3')), findsNothing);
+    });
+
+    testWidgets('料金を払えない(馬券を買った残りが足りない)予想屋は聞けない', (tester) async {
+      const tickets = [Ticket(id: 't1', type: BetType.win, horses: [2], amount: 900, odds: 5.1)];
+      await pump(tester, bettingView(coins: 1000, tickets: tickets, sellers: tipsters), table: odds);
+      await open(tester);
+      // 残り 100: 30 と 80 は聞ける、150 は聞けない
+      expect(tester.widget<FilledButton>(find.byKey(const Key('tip-paper'))).onPressed, isNotNull);
+      expect(tester.widget<FilledButton>(find.byKey(const Key('tip-veteran'))).onPressed, isNotNull);
+      expect(tester.widget<FilledButton>(find.byKey(const Key('tip-master'))).onPressed, isNull);
+      await tester.tap(find.byKey(const Key('tip-master')));
+      expect(tipsBought, isEmpty);
+    });
+
+    testWidgets('予想屋のいないサーバー(古い版)では、予想屋の欄を出さない', (tester) async {
+      await pump(tester, bettingView(), table: odds);
+      expect(find.textContaining('予想屋'), findsNothing);
+    });
+
+    testWidgets('幅 320 の画面で 3 人とも聞いた状態でも、はみ出さない', (tester) async {
+      const tips = [
+        Tip(id: 'paper', marks: [2, 5, 1], comment: '◎○▲の 3 頭でまず間違いない。'),
+        Tip(id: 'veteran', marks: [5, 2, 8], comment: 'パドックの気配は◎がいちばん。'),
+        Tip(id: 'master', marks: [2, 8, 5], comment: '人気より中身。◎を信じなさい。'),
+      ];
+      await pump(tester, bettingView(sellers: tipsters, tips: tips), table: odds, size: const Size(320, 640), ratio: 1.0);
+      expect(tester.takeException(), isNull);
+      expect(tester.widget<Text>(find.byKey(const Key('marks-2'))).data, contains('◎'));
+    });
   });
 
   testWidgets('出走表に、調子・表情・脚質・近走・距離と馬場が出る', (tester) async {

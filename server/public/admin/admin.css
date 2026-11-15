@@ -207,6 +207,11 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outl
 .plus { color: var(--win); font-weight: 800; }
 .minus { color: var(--lose); font-weight: 700; }
 
+.tip-results { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 10px; font-size: 16px; }
+.tip-results .label { color: var(--muted); font-weight: 700; }
+.tip-results .tip { padding: 2px 10px; border-radius: 8px; background: #fff6d6; border: 1px solid var(--gold); white-space: nowrap; }
+.tip-results .tip.hit { color: var(--win); font-weight: 800; }
+
 /* ---- 最終結果 ---- */
 .podium { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: end; margin-top: 8px; }
 .podium .step { text-align: center; padding: 20px 12px; border-radius: 16px; border: 2px solid var(--line); background: #fff; }

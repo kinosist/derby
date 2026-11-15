@@ -231,7 +231,7 @@ const STAGES = {
       const stage = $('stage');
       const c = v.course;
       stage.append(el('h2', '', c ? `出走表  芝 ${c.distance}m  馬場: ${c.going}` : '出走表'));
-      stage.append(el('p', 'hint', '馬券は 単勝(1着)・複勝(3着以内)・馬連(1着と2着の2頭)・3連単(1〜3着を順番どおり)の4種類。倍率は実力で決まります。「調子」と「表情」が良い馬は、倍率より来やすくなります(どちらも、たまに当てになりません)。'));
+      stage.append(el('p', 'hint', '馬券は 単勝(1着)・複勝(3着以内)・馬連(1着と2着の2頭)・3連単(1〜3着を順番どおり)の4種類。倍率は実力で決まります。「調子」と「表情」が良い馬は、倍率より来やすくなります(どちらも、たまに当てになりません)。アプリでは、料金を払うと予想屋が◎○▲を教えてくれます。'));
       const table = el('div', 'field');
       const head = el('div', 'row head');
       for (const t of ['', '', '馬名', '性齢', '馬体重', '脚質', '近走', '調子', '表情', '単勝', '複勝', '人気']) head.append(el('span', '', t));
@@ -304,6 +304,17 @@ const STAGES = {
         order.append(li);
       });
       left.append(order);
+      // 予想屋の予想と、◎ が 1 着だったか
+      if (Array.isArray(v.tipResults) && v.tipResults.length > 0) {
+        const tips = el('div', 'tip-results');
+        tips.append(el('span', 'label', '予想屋'));
+        const symbols = ['◎', '○', '▲'];
+        for (const t of v.tipResults) {
+          const marks = t.marks.map((no, i) => `${symbols[i] ?? ''}${no}`).join(' ');
+          tips.append(el('span', t.hit ? 'tip hit' : 'tip', `${t.name} ${marks} ${t.hit ? '的中' : 'はずれ'}`));
+        }
+        left.append(tips);
+      }
 
       const right = el('div', 'col');
       // 全員の賭けを公開する(的中した人を上に、増減の大きい順)

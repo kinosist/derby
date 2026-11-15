@@ -302,6 +302,7 @@ test('makeTips: 予想屋ごとに、重複のない 3 頭(◎○▲)とひと�
   for (let seed = 1; seed <= 100; seed++) {
     const tips = makeTips(makeField(seededRng(seed)), seededRng(seed + 500));
     expect(Object.keys(tips).sort()).toEqual(['master', 'paper', 'veteran']);
+    expect(new Set(Object.values(tips).map((t) => t.comment)).size).toBe(3); // ひとことは 3 人とも違う
     for (const tip of Object.values(tips)) {
       expect(tip.marks.length).toBe(3);
       expect(new Set(tip.marks).size).toBe(3);

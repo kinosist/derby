@@ -193,6 +193,25 @@ void main() {
     expect(winOdds([7], field), isNull);
   });
 
+  test('予想屋の一覧・買った予想・結果を読む。古いサーバー(項目なし)でも読める', () {
+    final v = parse('''
+{"phase":"result","raceNo":1,"totalRaces":5,"serverNow":0,"horses":[],"players":[],"betCount":0,"onlineCount":0,"race":null,"bets":[],
+ "tipsters":[{"id":"paper","name":"競馬新聞","price":30,"stars":1},{"id":"master","name":"伝説の予想屋","price":150,"stars":3}],
+ "tipResults":[{"id":"paper","name":"競馬新聞","marks":[2,5,1],"hit":true},{"id":"master","name":"伝説の予想屋","marks":[5,2,8],"hit":false}],
+ "me":{"id":"a","name":"たろう","coins":900,"rank":1,"tickets":[],"results":null,
+       "tips":[{"id":"paper","marks":[2,5,1],"comment":"今日はこの馬で決まり!"}]}}''');
+    expect(v.tipsters.map((t) => [t.id, t.name, t.price, t.stars]), [['paper', '競馬新聞', 30, 1], ['master', '伝説の予想屋', 150, 3]]);
+    expect(v.me!.tips.single.id, 'paper');
+    expect(v.me!.tips.single.marks, [2, 5, 1]);
+    expect(v.me!.tips.single.comment, '今日はこの馬で決まり!');
+    expect(v.tipResults.map((t) => [t.name, t.marks, t.hit]), [['競馬新聞', [2, 5, 1], true], ['伝説の予想屋', [5, 2, 8], false]]);
+
+    final old = parse('{"phase":"betting","raceNo":1,"totalRaces":5,"serverNow":0,"horses":[],"players":[],"betCount":0,"onlineCount":0,"race":null,"bets":[],"me":{"id":"a","name":"たろう","coins":900,"rank":1}}');
+    expect(old.tipsters, isEmpty);
+    expect(old.tipResults, isEmpty);
+    expect(old.me!.tips, isEmpty);
+  });
+
   test('phase の対応', () {
     for (final e in {'lobby': Phase.lobby, 'betting': Phase.betting, 'racing': Phase.racing, 'result': Phase.result}.entries) {
       final v = parse('{"phase":"${e.key}","raceNo":0,"totalRaces":5,"serverNow":0,"horses":[],"players":[],"betCount":0,"onlineCount":0,"me":null,"race":null,"bets":[]}');

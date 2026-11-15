@@ -137,6 +137,13 @@ class RoomClient extends ChangeNotifier {
     _notify();
   }
 
+  /// 予想屋に料金を払って、予想を聞く。
+  void buyTip(String tipsterId) {
+    _lastError = null;
+    _send({'t': 'buyTip', 'id': tipsterId});
+    _notify();
+  }
+
   /// 馬券を 1 点取り消す。
   void cancelTicket(String ticketId) {
     _lastError = null;

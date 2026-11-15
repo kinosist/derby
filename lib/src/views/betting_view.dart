@@ -31,13 +31,23 @@ String _comboKey(BetType type, List<int> horses) =>
 
 /// 賭け受付中の画面: 馬券の種類と馬を選び、金額を決めて買う。1 レースに複数の馬券を買える。
 class BettingView extends StatefulWidget {
-  const BettingView({super.key, required this.view, required this.odds, required this.onBuy, required this.onCancel});
+  const BettingView({
+    super.key,
+    required this.view,
+    required this.odds,
+    required this.onBuy,
+    required this.onCancel,
+    required this.onBuyTip,
+  });
   final RoomView view;
 
   /// 単勝以外の倍率表。まだ届いていない、または別のレースのものなら、単勝だけ買える。
   final OddsTable? odds;
   final void Function(BetType type, List<int> horses, int amount) onBuy;
   final void Function(String ticketId) onCancel;
+
+  /// 予想屋に料金を払って予想を聞く
+  final void Function(String tipsterId) onBuyTip;
 
   @override
   State<BettingView> createState() => _BettingViewState();
@@ -129,6 +139,19 @@ class _BettingViewState extends State<BettingView> {
     });
   }
 
+  /// 聞いた予想の印を、出走表の馬ごとにまとめる(例: 「競◎ 伝○」。頭の 1 文字は予想屋の名前)
+  String? _marksFor(int no) {
+    const symbols = ['◎', '○', '▲'];
+    final parts = <String>[];
+    for (final tip in _me?.tips ?? const <Tip>[]) {
+      final i = tip.marks.indexOf(no);
+      if (i < 0 || i >= symbols.length) continue;
+      final name = widget.view.tipsters.where((t) => t.id == tip.id).firstOrNull?.name ?? '';
+      parts.add('${name.isEmpty ? '' : name.substring(0, 1)}${symbols[i]}');
+    }
+    return parts.isEmpty ? null : parts.join(' ');
+  }
+
   void _tapHorse(int no) {
     setState(() {
       _selected = toggleSelection(_effectiveType, _selected, no);
@@ -159,9 +182,18 @@ class _BettingViewState extends State<BettingView> {
                   style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
                 ),
               ),
+              if (widget.view.tipsters.isNotEmpty)
+                _TipsterPanel(
+                  tipsters: widget.view.tipsters,
+                  tips: _me?.tips ?? const [],
+                  // 料金を払っても、買ってある馬券の合計を下回らない予想屋だけ聞ける
+                  available: _coins - (_me?.staked ?? 0),
+                  onBuy: widget.onBuyTip,
+                ),
               for (final h in widget.view.horses)
                 _HorseRow(
                   horse: h,
+                  marks: _marksFor(h.no),
                   // 複勝を選んでいるときは、複勝の倍率を見せる
                   odds: type == BetType.place && table != null && h.no - 1 < table.place.length ? table.place[h.no - 1] : h.odds,
                   selected: _selected.contains(h.no),
@@ -419,8 +451,18 @@ class _TypeSelector extends StatelessWidget {
 }
 
 class _HorseRow extends StatelessWidget {
-  const _HorseRow({required this.horse, required this.odds, required this.selected, required this.orderLabel, required this.onTap});
+  const _HorseRow({
+    required this.horse,
+    required this.odds,
+    required this.selected,
+    required this.orderLabel,
+    required this.onTap,
+    this.marks,
+  });
   final HorseInfo horse;
+
+  /// 聞いた予想の印(例: 「競◎ 伝○」)
+  final String? marks;
 
   /// 表示する倍率(単勝または複勝)
   final double odds;
@@ -464,6 +506,12 @@ class _HorseRow extends StatelessWidget {
                         alignment: Alignment.centerLeft,
                         child: Text(horse.name, maxLines: 1, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
                       ),
+                      if (marks != null)
+                        Text(
+                          marks!,
+                          key: Key('marks-${horse.no}'),
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFFB3261E), height: 1.2),
+                        ),
                       if (horse.hasDetails)
                         Text(
                           _details(horse),
@@ -505,6 +553,113 @@ class _HorseRow extends StatelessWidget {
     final diff = h.weightDiff > 0 ? '+${h.weightDiff}' : (h.weightDiff == 0 ? '±0' : '${h.weightDiff}');
     final mood = moodLabels[h.mood];
     return '${mood == null ? '' : '$mood ・ '}近走 ${h.recent.join('-')} ・ ${h.style} ・ ${h.sex}${h.age} ${h.weight}kg($diff)';
+  }
+}
+
+/// 予想屋の欄。開くと 3 人が並び、料金を払うと ◎○▲ を教えてくれる。聞いた予想はここに出続ける。
+class _TipsterPanel extends StatefulWidget {
+  const _TipsterPanel({required this.tipsters, required this.tips, required this.available, required this.onBuy});
+  final List<TipsterInfo> tipsters;
+  final List<Tip> tips;
+
+  /// 予想屋に払えるコイン(所持金 − 買ってある馬券の合計)
+  final int available;
+  final void Function(String tipsterId) onBuy;
+
+  @override
+  State<_TipsterPanel> createState() => _TipsterPanelState();
+}
+
+class _TipsterPanelState extends State<_TipsterPanel> {
+  late bool _open = widget.tips.isNotEmpty; // 聞いた予想があれば、最初から開いておく
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Material(
+        color: const Color(0xFFFFF6D6),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: Color(0xFFE0A100)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            InkWell(
+              onTap: () => setState(() => _open = !_open),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.record_voice_over, size: 20, color: Color(0xFF6B4A00)),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        '予想屋に聞く(料金を払うと◎○▲を教えてくれる)',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF3D2B00)),
+                      ),
+                    ),
+                    Icon(_open ? Icons.expand_less : Icons.expand_more, color: const Color(0xFF6B4A00)),
+                  ],
+                ),
+              ),
+            ),
+            if (_open)
+              for (final t in widget.tipsters) _buildTipster(context, t, scheme),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTipster(BuildContext context, TipsterInfo t, ColorScheme scheme) {
+    final tip = widget.tips.where((x) => x.id == t.id).firstOrNull;
+    const ink = Color(0xFF3D2B00);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Flexible(
+                child: Text(t.name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: ink)),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '★' * t.stars.clamp(0, 3) + '☆' * (3 - t.stars.clamp(0, 3)),
+                style: const TextStyle(fontSize: 13, color: Color(0xFFB26A00)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          if (tip != null) ...[
+            Text(
+              tipMarksText(tip.marks),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFFB3261E), height: 1.2),
+            ),
+            if (tip.comment.isNotEmpty)
+              Text('「${tip.comment}」', style: const TextStyle(fontSize: 12, color: ink, height: 1.25)),
+          ] else
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton(
+                key: Key('tip-${t.id}'),
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  backgroundColor: const Color(0xFF8A6200),
+                  textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                ),
+                onPressed: widget.available >= t.price ? () => widget.onBuy(t.id) : null,
+                child: Text(widget.available >= t.price ? '${t.price}コインで聞く' : '${t.price}コイン(コインが足りません)'),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 

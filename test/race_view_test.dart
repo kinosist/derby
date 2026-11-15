@@ -209,6 +209,27 @@ void main() {
     expect(find.text('的中! +0'), findsOneWidget);
   });
 
+  testWidgets('結果: 予想屋 3 人の予想と当たり外れが出る', (tester) async {
+    phone(tester);
+    final base = view(Phase.result);
+    client.debugSetView(RoomView(
+      phase: Phase.result, raceNo: 2, totalRaces: 5, serverNow: now, betCount: 0, onlineCount: 2,
+      horses: base.horses, course: base.course, players: base.players, race: base.race, bets: const [], me: base.me,
+      tipResults: const [
+        TipResult(id: 'paper', name: '競馬新聞', marks: [2, 5, 1], hit: false),
+        TipResult(id: 'veteran', name: 'ベテラン予想屋', marks: [1, 2, 8], hit: true),
+        TipResult(id: 'master', name: '伝説の予想屋', marks: [1, 8, 5], hit: true),
+      ],
+    ));
+    await tester.pumpWidget(DerbyApp(client: client));
+    await tester.pump();
+    expect(find.textContaining('競馬新聞'), findsOneWidget);
+    expect(find.textContaining('◎2 ○5 ▲1'), findsOneWidget);
+    expect(find.textContaining('◎1 ○2 ▲8'), findsOneWidget);
+    expect(find.textContaining('的中'), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('結果画面の文言', (tester) async {
     phone(tester);
     client.debugSetView(view(Phase.result, bet: const Ticket(id: 't', type: BetType.win, horses: [1], amount: 300, odds: 2.0), results: const Results(staked: 300, delta: 1230, tickets: [TicketResult(type: BetType.win, horses: [1], amount: 300, odds: 5.1, won: true, payout: 1530)])));

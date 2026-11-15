@@ -136,6 +136,62 @@ String ticketLabel(BetType type, List<int> horses) =>
 
 List<int> _ints(Object? raw) => raw is List ? [for (final e in raw) if (e is int) e] : const [];
 
+/// 予想屋(賭け受付中に、料金を払うと予想を教えてくれる)
+class TipsterInfo {
+  const TipsterInfo({required this.id, required this.name, required this.price, required this.stars});
+  final String id;
+  final String name;
+  final int price;
+
+  /// 精度(1〜3)
+  final int stars;
+
+  factory TipsterInfo.fromJson(Map<String, dynamic> j) => TipsterInfo(
+        id: j['id'] as String,
+        name: j['name'] as String,
+        price: j['price'] as int,
+        stars: j['stars'] is int ? j['stars'] as int : 1,
+      );
+}
+
+/// 予想の印(例: 「◎2 ○5 ▲1」)。marks は ◎本命・○対抗・▲単穴 の馬番。
+String tipMarksText(List<int> marks) {
+  const symbols = ['◎', '○', '▲'];
+  return [for (var i = 0; i < marks.length && i < symbols.length; i++) '${symbols[i]}${marks[i]}'].join(' ');
+}
+
+/// 買った予想
+class Tip {
+  const Tip({required this.id, required this.marks, required this.comment});
+
+  /// 予想屋の id
+  final String id;
+  final List<int> marks;
+  final String comment;
+
+  factory Tip.fromJson(Map<String, dynamic> j) => Tip(
+        id: j['id'] as String,
+        marks: _ints(j['marks']),
+        comment: j['comment'] is String ? j['comment'] as String : '',
+      );
+}
+
+/// 結果画面で公開される、予想屋の予想と当たり外れ(◎ が 1 着なら的中)
+class TipResult {
+  const TipResult({required this.id, required this.name, required this.marks, required this.hit});
+  final String id;
+  final String name;
+  final List<int> marks;
+  final bool hit;
+
+  factory TipResult.fromJson(Map<String, dynamic> j) => TipResult(
+        id: j['id'] as String,
+        name: j['name'] as String,
+        marks: _ints(j['marks']),
+        hit: j['hit'] == true,
+      );
+}
+
 /// 買った馬券 1 点。odds は買った時点の倍率。
 class Ticket {
   const Ticket({required this.id, required this.type, required this.horses, required this.amount, required this.odds});
@@ -215,11 +271,15 @@ class Me {
     required this.rank,
     this.tickets = const [],
     this.results,
+    this.tips = const [],
   });
   final String id;
   final String name;
   final int coins;
   final int rank;
+
+  /// このレースで買った予想
+  final List<Tip> tips;
 
   /// このレースで買った馬券
   final List<Ticket> tickets;
@@ -265,6 +325,7 @@ class Me {
       rank: j['rank'] as int,
       tickets: tickets,
       results: results,
+      tips: _list(j['tips'], Tip.fromJson),
     );
   }
 }
@@ -394,6 +455,8 @@ class RoomView {
     this.race,
     this.course,
     this.raceKey,
+    this.tipsters = const [],
+    this.tipResults = const [],
   });
 
   final Phase phase;
@@ -410,6 +473,12 @@ class RoomView {
 
   /// レースごとに変わる識別子(倍率表と対応させる)。古いサーバーは送らない。
   final String? raceKey;
+
+  /// 予想屋の一覧(賭け受付中のみ。古いサーバーは送らない)
+  final List<TipsterInfo> tipsters;
+
+  /// 結果画面で公開される、予想屋の予想と当たり外れ
+  final List<TipResult> tipResults;
   final List<PublicBet> bets;
 
   factory RoomView.fromJson(Map<String, dynamic> j) => RoomView(
@@ -426,5 +495,7 @@ class RoomView {
         race: j['race'] == null ? null : RaceInfo.fromJson(j['race'] as Map<String, dynamic>),
         course: j['course'] is Map<String, dynamic> ? CourseInfo.fromJson(j['course'] as Map<String, dynamic>) : null,
         raceKey: j['raceKey'] is String ? j['raceKey'] as String : null,
+        tipsters: _list(j['tipsters'], TipsterInfo.fromJson),
+        tipResults: _list(j['tipResults'], TipResult.fromJson),
       );
 }

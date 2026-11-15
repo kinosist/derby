@@ -369,13 +369,15 @@ function gaussian(rng: Rng): number {
  */
 export function makeTips(horses: Horse[], rng: Rng): Record<TipsterId, Tip> {
   const out = {} as Record<TipsterId, Tip>;
+  // ひとことは、予想屋どうしで重ならないように選ぶ
+  const comments = [...TIP_COMMENTS];
   for (const t of TIPSTERS) {
     const scored = horses
       .map((h) => ({ no: h.no, score: Math.log(h.prob) + TIP_VALUE_WEIGHT * Math.log(h.prob / (h.baseProb ?? h.prob)) + gaussian(rng) * t.noise }))
       .sort((a, b) => b.score - a.score || a.no - b.no);
     out[t.id] = {
       marks: scored.slice(0, 3).map((x) => x.no),
-      comment: TIP_COMMENTS[Math.floor(rng() * TIP_COMMENTS.length)],
+      comment: comments.splice(Math.floor(rng() * comments.length), 1)[0],
     };
   }
   return out;

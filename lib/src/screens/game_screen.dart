@@ -45,6 +45,7 @@ class GameScreen extends StatelessWidget {
                   odds: client.oddsTable,
                   onBuy: client.placeTicket,
                   onCancel: client.cancelTicket,
+                  onBuyTip: client.buyTip,
                 ),
               Phase.racing => RaceView(client: client),
               Phase.result => ResultView(view: view),
