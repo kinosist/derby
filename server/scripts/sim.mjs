@@ -2,14 +2,14 @@
 //   node scripts/sim.mjs                       先生役+生徒 40 人で 1 試合を通し、動作を検証する
 //   node scripts/sim.mjs --no-admin --players 10
 //                                              生徒役だけ。管理ページの操作に合わせて賭け続ける(Ctrl+C で終了)
-// オプション: --url ws://localhost:8787/ws  --key dev  --players 40
+// オプション: --url ws://127.0.0.1:8787/ws  --key dev  --players 40
 
 const args = process.argv.slice(2);
 const opt = (name, def) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 && args[i + 1] !== undefined ? args[i + 1] : def;
 };
-const URL_ = opt('url', 'ws://localhost:8787/ws');
+const URL_ = opt('url', 'ws://127.0.0.1:8787/ws');
 const KEY = opt('key', 'dev');
 const N = Number(opt('players', '40'));
 const NO_ADMIN = args.includes('--no-admin');

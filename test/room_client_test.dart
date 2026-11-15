@@ -15,8 +15,10 @@ class FakeTransport implements Transport {
 
   @override
   Stream<String> get messages => _incoming.stream;
+  /// null なら即座に接続完了。設定すると、その Future が終わるまで接続中のままになる。
+  Future<void>? readyFuture;
   @override
-  Future<void> get ready async {}
+  Future<void> get ready => readyFuture ?? Future.value();
   @override
   int? get closeCode => _closeCode;
   @override
@@ -56,6 +58,10 @@ void main() {
   late List<FakeTransport> transports;
   late SharedPreferences prefs;
 
+  /// これから作られる接続が、応答なしで固まるようにする
+  var hang = false;
+  setUp(() => hang = false);
+
   Future<RoomClient> makeClient(Map<String, Object> saved, {int Function()? nowMs}) async {
     SharedPreferences.setMockInitialValues(saved);
     prefs = await SharedPreferences.getInstance();
@@ -66,6 +72,7 @@ void main() {
       nowMs: nowMs,
       connect: (uri) {
         final t = FakeTransport();
+        if (hang) t.readyFuture = Completer<void>().future;
         transports.add(t);
         return t;
       },
@@ -176,6 +183,53 @@ void main() {
         waits.add(waited);
       }
       expect(waits, [1000, 2000, 4000, 5000, 5000]);
+    });
+  });
+
+  test('接続の試行が応答なしで固まっても、8 秒で打ち切って再試行する', () {
+    fakeAsync((async) {
+      late RoomClient client;
+      makeClient({'derby.id': 'id-1', 'derby.name': 'たろう'}).then((c) => client = c);
+      settle(async);
+      hang = true;
+      client.init();
+      settle(async);
+      expect(transports.length, 1);
+      expect(client.status, ConnStatus.connecting);
+      async.elapse(const Duration(seconds: 7));
+      expect(transports.length, 1);
+      // 8 秒で打ち切り、1 秒後に次の試行。今度はつながる。
+      hang = false;
+      async.elapse(const Duration(seconds: 3));
+      expect(transports[0].closedByClient, true);
+      expect(transports.length, 2);
+      expect(client.status, ConnStatus.connected);
+      expect(transports[1].sent.single, {'t': 'join', 'id': 'id-1', 'name': 'たろう'});
+    });
+  });
+
+  test('接続に失敗(例外)しても再試行を続ける', () {
+    fakeAsync((async) {
+      late RoomClient client;
+      makeClient({'derby.id': 'id-1', 'derby.name': 'たろう'}).then((c) => client = c);
+      settle(async);
+      client.init();
+      settle(async);
+      transports[0].receive(stateMessage());
+      settle(async);
+      transports[0].serverCloses();
+      settle(async);
+      // 再試行が 3 回続けて失敗する
+      for (var i = 0; i < 3; i++) {
+        final count = transports.length;
+        async.elapse(const Duration(seconds: 6));
+        expect(transports.length, greaterThan(count), reason: '再試行 ${i + 1} 回目');
+        transports.last.readyFuture = null;
+        transports.last.serverCloses();
+        settle(async);
+      }
+      async.elapse(const Duration(seconds: 6));
+      expect(client.status, ConnStatus.connected);
     });
   });
 

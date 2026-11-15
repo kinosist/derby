@@ -6,6 +6,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'protocol.dart';
@@ -22,7 +23,13 @@ abstract class Transport {
 }
 
 class WebSocketTransport implements Transport {
-  WebSocketTransport(Uri uri) : _channel = WebSocketChannel.connect(uri);
+  // pingInterval: 応答のなくなった接続(Wi-Fi が黙って切れた場合など)を検出して閉じ、再接続に回す。
+  WebSocketTransport(Uri uri)
+      : _channel = IOWebSocketChannel.connect(
+          uri,
+          pingInterval: const Duration(seconds: 5),
+          connectTimeout: _connectTimeout,
+        );
   final WebSocketChannel _channel;
 
   @override
@@ -40,6 +47,7 @@ class WebSocketTransport implements Transport {
 const _idKey = 'derby.id';
 const _nameKey = 'derby.name';
 const _closeReplaced = 4000;
+const _connectTimeout = Duration(seconds: 8);
 
 class RoomClient extends ChangeNotifier {
   RoomClient({
@@ -175,7 +183,8 @@ class RoomClient extends ChangeNotifier {
       cancelOnError: true,
     );
     try {
-      await transport.ready;
+      // 応答のないネットワークでは接続の試行が固まることがある。打ち切って再試行に回す。
+      await transport.ready.timeout(_connectTimeout);
     } catch (_) {
       _onClosed(transport);
       return;
