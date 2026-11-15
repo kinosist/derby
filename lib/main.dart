@@ -37,7 +37,8 @@ class DerbyApp extends StatelessWidget {
         listenable: client,
         builder: (context, _) {
           final joined = client.view?.me != null;
-          final reconnecting = client.status != ConnStatus.connected && (joined || client.savedName != null);
+          // 初めての参加でつながらないときも出す(接続先の間違いや、ネットワークの制限に気づけるように)
+          final reconnecting = client.status != ConnStatus.connected && client.wantsRoom;
           return Stack(
             children: [
               joined

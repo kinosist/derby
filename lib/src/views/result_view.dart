@@ -65,7 +65,7 @@ class ResultView extends StatelessWidget {
           ),
         const SizedBox(height: 8),
         const Divider(height: 1),
-        Expanded(child: Leaderboard(players: view.players, meId: view.me?.id)),
+        Expanded(child: Leaderboard(players: view.players, meId: view.me?.id, bets: view.bets)),
         Padding(
           padding: const EdgeInsets.all(10),
           child: Text('先生が次へ進めるのを待っています', style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),

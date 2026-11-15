@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
   adminCloseAndRace, adminNewGame, adminNext, adminReset, adminStart, cancelBet, finishRace,
-  join, kick, kickAll, newGame, normalizeName, placeBet, setOnline, viewFor,
+  join, kick, kickAll, newGame, normalizeName, placeBet, sameScene, setOnline, viewFor,
   type GameState,
 } from '../src/game';
 import { payout, seededRng, START_COINS, TOTAL_RACES } from '../src/rules';
@@ -329,7 +329,10 @@ describe('viewFor', () => {
     s = finishRace(s);
     const result = viewFor(s, idOf('b'), false, 0);
     expect(result.bets.length).toBe(1);
-    expect(result.bets[0]).toMatchObject({ playerId: idOf('a'), horse: 1, amount: 100 });
+    // 他人の賭けは、順位表のその人の行と同じ(公開用の)id で届く
+    expect(result.bets[0]).toMatchObject({
+      playerId: result.players.find((p) => p.name === 'a')!.id, horse: 1, amount: 100,
+    });
     expect(typeof result.bets[0].delta).toBe('number');
     expect(result.race).not.toBeNull();
   });
@@ -379,5 +382,52 @@ describe('退出・リセット', () => {
     expect(r.phase).toBe('lobby');
     expect(r.raceNo).toBe(0);
     expect(coins(r, 'a')).toBe(1000);
+  });
+});
+
+describe('最終レビューの指摘', () => {
+  test('進行操作は、先生が見ていた場面と今の場面が一致するときだけ通る(二重クリック対策)', () => {
+    const lobby = setup(['a']);
+    expect(sameScene(lobby, 'lobby', 0)).toBe(true);
+    const betting = ok(adminStart(lobby, seededRng(1)));
+    // 「試合開始」の二重クリック: 2回目は lobby を見て押されたもの
+    expect(sameScene(betting, 'lobby', 0)).toBe(false);
+    expect(sameScene(betting, 'betting', 1)).toBe(true);
+    expect(sameScene(betting, 'betting', 2)).toBe(false);
+    expect(sameScene(betting, undefined, undefined)).toBe(false);
+    expect(sameScene(betting, 'betting', '1')).toBe(false);
+  });
+
+  test('生徒には他人の本当の id を見せない(なりすまし対策)', () => {
+    let s = ok(adminStart(setup(['a', 'b']), seededRng(1)));
+    s = ok(placeBet(s, idOf('a'), 1, 100));
+    s = finishRace(ok(adminCloseAndRace(s, seededRng(2), 0)));
+    const v = viewFor(s, idOf('b'), false, 0);
+    const text = JSON.stringify(v);
+    expect(text).not.toContain(idOf('a'));
+    expect(v.me!.id).toBe(idOf('b'));
+    // 自分の行は自分の id のまま(アプリが「自分の行」を見分けるため)
+    expect(v.players.find((p) => p.name === 'b')!.id).toBe(idOf('b'));
+    // 他人の行と、その人の賭けは、同じ公開用の id で結び付く
+    const aRow = v.players.find((p) => p.name === 'a')!;
+    expect(v.bets.map((x) => x.playerId)).toEqual([aRow.id]);
+    // 公開用の id では参加(乗っ取り)できない
+    expect(join(s, aRow.id, 'a', newId).error).toBe('name_taken');
+    // 自分の賭けは自分の id で届く
+    expect(viewFor(s, idOf('a'), false, 0).bets[0].playerId).toBe(idOf('a'));
+    // 先生には本当の id が届く(個別の退出に使う)
+    expect(viewFor(s, null, true, 0).players.map((p) => p.id).sort()).toEqual([idOf('a'), idOf('b')]);
+  });
+
+  test('公開用の id は入り直しても変わらず、参加者ごとに違う', () => {
+    let s = setup(['a', 'b']);
+    const before = viewFor(s, idOf('b'), false, 0).players.find((p) => p.name === 'a')!.id;
+    s = setOnline(s, idOf('a'), false);
+    s = ok(join(s, 'another-device', 'a', newId));
+    const after = viewFor(s, idOf('b'), false, 0).players.find((p) => p.name === 'a')!.id;
+    expect(after).toBe(before);
+    expect(after).not.toBe('another-device');
+    const mine = viewFor(s, 'another-device', false, 0).players.find((p) => p.name === 'b')!.id;
+    expect(mine).not.toBe(after);
   });
 });

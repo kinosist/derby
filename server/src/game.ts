@@ -16,7 +16,10 @@ export type Bet = { horse: number; amount: number };
 export type LastResult = { horse: number; amount: number; won: boolean; delta: number };
 
 export type Player = {
+  /** 本人だけが知る id(入り直しの確認に使う)。本人と先生以外には送らない。 */
   id: string;
+  /** 公開用の id。ほかの生徒に見せる順位表や賭けの一覧ではこちらを使う。 */
+  pub: string;
   name: string;
   coins: number;
   online: boolean;
@@ -67,7 +70,7 @@ export function normalizeName(raw: unknown): string | null {
 function usableId(s: GameState, id: unknown, except?: Player): id is string {
   return (
     typeof id === 'string' && id.length >= 1 && id.length <= 64 &&
-    !s.players.some((p) => p !== except && p.id === id)
+    !s.players.some((p) => (p !== except && p.id === id) || p.pub === id)
   );
 }
 
@@ -94,7 +97,9 @@ export function join(
 
   if (s.players.length >= MAX_PLAYERS) return { state: s, error: 'room_full' };
   const playerId = usableId(s, id) ? id : newId();
-  const player: Player = { id: playerId, name, coins: START_COINS, online: true, bet: null, lastResult: null };
+  const player: Player = {
+    id: playerId, pub: newId(), name, coins: START_COINS, online: true, bet: null, lastResult: null,
+  };
   return { state: { ...s, players: [...s.players, player] }, playerId };
 }
 
@@ -218,7 +223,17 @@ export function kickAll(_s: GameState): R {
   return { state: newGame() };
 }
 
+/**
+ * 先生の進行操作が、先生が見ていた場面に対するものかを確かめる。
+ * 二重クリックの2回目は、1回目で場面が変わった後に届くので、ここで弾かれる。
+ */
+export function sameScene(s: GameState, phase: unknown, raceNo: unknown): boolean {
+  return phase === s.phase && raceNo === s.raceNo;
+}
+
 export function viewFor(s: GameState, playerId: string | null, isAdmin: boolean, now: number): View {
+  // 他人の本当の id を知ると、その人になりすまして入り直せてしまう。本人と先生以外には公開用の id を送る。
+  const shownId = (p: Player) => (isAdmin || p.id === playerId ? p.id : p.pub);
   const rankOf = (p: Player) => 1 + s.players.filter((q) => q.coins > p.coins).length;
   const sorted = [...s.players].sort(
     (a, b) => b.coins - a.coins || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
@@ -234,7 +249,7 @@ export function viewFor(s: GameState, playerId: string | null, isAdmin: boolean,
     serverNow: now,
     horses: showHorses ? s.horses.map((h) => ({ no: h.no, name: h.name, odds: h.odds })) : [],
     players: sorted.map((p) => ({
-      id: p.id,
+      id: shownId(p),
       name: p.name,
       coins: p.coins,
       online: p.online,
@@ -251,7 +266,7 @@ export function viewFor(s: GameState, playerId: string | null, isAdmin: boolean,
       s.phase === 'result'
         ? s.players
             .filter((p) => p.bet && p.lastResult)
-            .map((p) => ({ playerId: p.id, horse: p.bet!.horse, amount: p.bet!.amount, delta: p.lastResult!.delta }))
+            .map((p) => ({ playerId: shownId(p), horse: p.bet!.horse, amount: p.bet!.amount, delta: p.lastResult!.delta }))
         : [],
     isAdmin,
   };

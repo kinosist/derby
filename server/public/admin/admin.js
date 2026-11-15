@@ -31,6 +31,8 @@ let clockOffset = 0; // サーバー時刻 − このPCの時刻
 let retryMs = 1000;
 let teacherKey = readKey();
 let waitingForState = false;
+let sceneChangedAt = 0; // 場面が変わった直後は、主ボタンをしばらく押せなくする(二重クリック対策)
+const BUTTON_HOLD_MS = 1000;
 
 function readKey() {
   try { return localStorage.getItem(KEY_STORAGE); } catch { return null; }
@@ -83,7 +85,8 @@ function send(o) {
 function action(name, extra) {
   waitingForState = true;
   renderControls();
-  send({ t: 'adminAction', action: name, ...extra });
+  // 見ていた場面を添える。サーバーは、場面が変わった後に届いた操作(二重クリックの2回目など)を受け付けない。
+  send({ t: 'adminAction', action: name, phase: view.phase, raceNo: view.raceNo, ...extra });
 }
 
 // ---- ログイン ----
@@ -143,12 +146,18 @@ function render() {
   $('phaseLabel').textContent = PHASE_LABELS[v.phase];
   $('countLabel').textContent =
     v.phase === 'betting' ? `賭け済み ${v.betCount} / ${v.onlineCount} 人` : `接続中 ${v.onlineCount} 人`;
+  // 場面が変わったら、主ボタンをしばらく押せなくする(ボタンの表示を更新する前に記録する)
+  const key = `${v.phase}:${v.raceNo}`;
+  const sceneChanged = key !== stageKey;
+  if (sceneChanged) {
+    sceneChangedAt = Date.now();
+    setTimeout(renderControls, BUTTON_HOLD_MS + 20);
+  }
   renderControls();
   renderBoard();
 
   // レース映像を描き直さないよう、場面が変わったときだけ中央を作り直す
-  const key = `${v.phase}:${v.raceNo}`;
-  if (key !== stageKey) {
+  if (sceneChanged) {
     stageKey = key;
     stopRace();
     $('stage').replaceChildren();
@@ -162,7 +171,7 @@ function renderControls() {
   const btn = $('mainBtn');
   btn.hidden = !a;
   if (a) btn.textContent = a[0];
-  btn.disabled = waitingForState;
+  btn.disabled = waitingForState || Date.now() - sceneChangedAt < BUTTON_HOLD_MS;
 }
 
 function renderBoard() {
@@ -255,15 +264,20 @@ const STAGES = {
       left.append(order);
 
       const right = el('div', 'col');
-      const winners = v.bets.filter((b) => b.delta > 0).sort((a, b) => b.delta - a.delta);
-      const losers = v.bets.length - winners.length;
-      right.append(el('h2', '', `的中 ${winners.length} 人 / はずれ ${losers} 人`));
+      // 全員の賭けを公開する(的中した人を上に、増減の大きい順)
+      const all = [...v.bets].sort((a, b) => b.delta - a.delta);
+      const winners = all.filter((b) => b.delta > 0).length;
+      right.append(el('h2', '', `的中 ${winners} 人 / はずれ ${all.length - winners} 人`));
       const list = el('ul', 'winners');
       const nameOf = (id) => v.players.find((p) => p.id === id)?.name ?? '(退出)';
-      if (winners.length === 0) list.append(el('li', '', '的中した人はいませんでした'));
-      for (const b of winners) {
+      if (all.length === 0) list.append(el('li', '', '賭けた人はいませんでした'));
+      for (const b of all) {
         const li = el('li');
-        li.append(el('span', 'name', nameOf(b.playerId)), el('span', '', `${fmt(b.amount)} を賭けて`), el('span', 'plus', `+${fmt(b.delta)}`));
+        const won = b.delta > 0;
+        li.append(
+          el('span', 'name', nameOf(b.playerId)), horseBadge(b.horse), el('span', '', `に ${fmt(b.amount)}`),
+          el('span', won ? 'plus' : 'minus', won ? `+${fmt(b.delta)}` : `−${fmt(-b.delta)}`),
+        );
         list.append(li);
       }
       right.append(list);

@@ -83,6 +83,9 @@ class RoomClient extends ChangeNotifier {
   RoomView? get view => _view;
   String? get savedName => _savedName;
 
+  /// 部屋に入ろうとしている(参加を押した、または参加済み)。つながっていなければ再接続を続けている。
+  bool get wantsRoom => _wantedName != null;
+
   /// 直近のエラーの文言。次の操作で消える。
   String? get lastError => _lastError;
 

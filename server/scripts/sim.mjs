@@ -126,6 +126,11 @@ async function runPlayersOnly() {
   await new Promise(() => {});
 }
 
+/** 先生役の進行操作。見ている場面(phase と raceNo)を添えて送る。 */
+function advance(admin, action) {
+  admin.send({ t: 'adminAction', action, phase: admin.state.phase, raceNo: admin.state.raceNo });
+}
+
 // ---- 通し確認 ----
 async function runFull() {
   // 先生の認証
@@ -174,6 +179,11 @@ async function runFull() {
   await players[2].expectError('not_allowed', 'lobby での賭け');
 
   admin.send({ t: 'adminAction', action: 'start' });
+  await admin.expectError('not_allowed', '場面を添えない進行操作');
+  // 「試合開始」の二重クリック: 2回目も lobby を見て押されたものなので、レースを始めてはいけない
+  advance(admin, 'start');
+  admin.send({ t: 'adminAction', action: 'closeAndRace', phase: 'lobby', raceNo: 0 });
+  await admin.expectError('not_allowed', '「試合開始」の二重クリック');
   const totalRaces = 5;
 
   for (let race = 1; race <= totalRaces; race++) {
@@ -223,8 +233,8 @@ async function runFull() {
 
     // 締め切り(連打: Review Focus 1)
     const t0 = Date.now();
-    admin.send({ t: 'adminAction', action: 'closeAndRace' });
-    admin.send({ t: 'adminAction', action: 'closeAndRace' });
+    advance(admin, 'closeAndRace');
+    advance(admin, 'closeAndRace');
     await admin.expectError('not_allowed', '締め切りの連打');
     await Promise.all(players.map((p) => p.waitPhase('racing', race)));
     const startedAt = players[0].state.race.startedAt;
@@ -273,9 +283,19 @@ async function runFull() {
     console.log(`第${race}レース: 1着 ${winner}番(${odds}倍)、${betCount} 人が賭け、${took}ms`);
 
     // 次へ(連打: Review Focus 1)
-    admin.send({ t: 'adminAction', action: 'next' });
-    admin.send({ t: 'adminAction', action: 'next' });
-    await admin.expectError('not_allowed', '「次へ」の連打');
+    // 「次のレースへ」の二重クリック: 2回目は結果画面を見て押されたもの。
+    // 次の場面のボタン(締め切り・新しい試合)として働いてはいけない。
+    await admin.waitPhase('result', race);
+    const seen = { phase: admin.state.phase, raceNo: admin.state.raceNo };
+    advance(admin, 'next');
+    admin.send({ t: 'adminAction', action: race === totalRaces ? 'newGame' : 'closeAndRace', ...seen });
+    await admin.expectError('not_allowed', '「次へ」の二重クリック');
+    await sleep(300);
+    check(admin.state.phase === (race === totalRaces ? 'final' : 'betting'), '二重クリックでレースや最終結果が飛ばない');
+    for (const p of players) {
+      const others = p.state.players.filter((x) => x.name !== p.state.me.name);
+      check(others.every((x) => !x.id.startsWith('sim-')), '他人の本当の id は届かない');
+    }
   }
 
   await Promise.all(players.map((p) => p.waitPhase('final', totalRaces)));

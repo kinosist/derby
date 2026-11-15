@@ -3,7 +3,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import {
   adminCloseAndRace, adminNewGame, adminNext, adminReset, adminStart, cancelBet, finishRace,
-  join, kick, kickAll, newGame, placeBet, setOnline, viewFor,
+  join, kick, kickAll, newGame, placeBet, sameScene, setOnline, viewFor,
   type ErrorCode, type GameState, type R,
 } from './game';
 import { cryptoRng } from './rules';
@@ -137,6 +137,10 @@ export class Room extends DurableObject<Env> {
   }
 
   private async adminAction(ws: WebSocket, msg: Record<string, unknown>): Promise<void> {
+    // 進行を進める操作は、先生が見ていた場面(phase と raceNo)を添えて送る。
+    // 今の場面と違えば、二重クリックなどの古い操作なので受け付けない。
+    const advances = msg.action === 'start' || msg.action === 'closeAndRace' || msg.action === 'next' || msg.action === 'newGame';
+    if (advances && !sameScene(this.state, msg.phase, msg.raceNo)) return this.sendError(ws, 'not_allowed');
     switch (msg.action) {
       case 'start':
         return this.apply(ws, adminStart(this.state, this.rng));

@@ -143,8 +143,10 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outl
 .order .place { width: 3em; color: var(--muted); font-weight: 700; }
 .order .hname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .winners { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; min-height: 0; }
-.winners li { display: flex; gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.winners li { display: flex; align-items: center; gap: 12px; padding: 3px 0; font-size: 18px; border-bottom: 1px solid var(--line); }
 .winners .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.winners .no { font-size: 14px; }
+.winners .plus, .winners .minus { min-width: 5em; text-align: right; }
 .plus { color: var(--win); font-weight: 800; }
 .minus { color: var(--lose); font-weight: 700; }
 
