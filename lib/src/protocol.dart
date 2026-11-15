@@ -15,13 +15,78 @@ List<T> _list<T>(Object? raw, T Function(Map<String, dynamic>) f) =>
     raw is List ? [for (final e in raw) f(e as Map<String, dynamic>)] : <T>[];
 
 class HorseInfo {
-  const HorseInfo({required this.no, required this.name, required this.odds});
+  const HorseInfo({
+    required this.no,
+    required this.name,
+    required this.odds,
+    this.sex = '',
+    this.age = 0,
+    this.weight = 0,
+    this.weightDiff = 0,
+    this.style = '',
+    this.recent = const [],
+    this.pop = 0,
+    this.cond = 3,
+    this.mood = 'calm',
+    this.hasDetails = false,
+  });
   final int no;
   final String name;
   final double odds;
 
-  factory HorseInfo.fromJson(Map<String, dynamic> j) =>
-      HorseInfo(no: j['no'] as int, name: j['name'] as String, odds: (j['odds'] as num).toDouble());
+  /// 性別(牡・牝・セ)と年齢
+  final String sex;
+  final int age;
+
+  /// 馬体重(kg)と前走からの増減
+  final int weight;
+  final int weightDiff;
+
+  /// 脚質(逃げ・先行・差し・追込)
+  final String style;
+
+  /// 近3走の着順(新しい順)
+  final List<int> recent;
+
+  /// 人気順
+  final int pop;
+
+  /// 調子 1(絶不調)〜 5(絶好調)
+  final int cond;
+
+  /// 表情: fired / happy / calm / restless / sleepy
+  final String mood;
+
+  /// 詳細が届いているか(古いサーバーは名前と倍率しか送らない)
+  final bool hasDetails;
+
+  factory HorseInfo.fromJson(Map<String, dynamic> j) => HorseInfo(
+        no: j['no'] as int,
+        name: j['name'] as String,
+        odds: (j['odds'] as num).toDouble(),
+        sex: j['sex'] is String ? j['sex'] as String : '',
+        age: j['age'] is int ? j['age'] as int : 0,
+        weight: j['weight'] is int ? j['weight'] as int : 0,
+        weightDiff: j['weightDiff'] is int ? j['weightDiff'] as int : 0,
+        style: j['style'] is String ? j['style'] as String : '',
+        recent: j['recent'] is List ? [for (final e in j['recent'] as List) if (e is int) e] : const [],
+        pop: j['pop'] is int ? j['pop'] as int : 0,
+        cond: j['cond'] is int ? (j['cond'] as int).clamp(1, 5) : 3,
+        mood: j['mood'] is String ? j['mood'] as String : 'calm',
+        hasDetails: j['cond'] is int && j['mood'] is String,
+      );
+}
+
+/// レースの距離(m)と馬場状態
+class CourseInfo {
+  const CourseInfo({required this.distance, required this.going});
+  final int distance;
+  final String going;
+
+  factory CourseInfo.fromJson(Map<String, dynamic> j) => CourseInfo(
+        distance: j['distance'] is int ? j['distance'] as int : 1600,
+        going: j['going'] is String ? j['going'] as String : '良',
+      );
 }
 
 class PlayerInfo {
@@ -132,6 +197,7 @@ class RoomView {
     required this.bets,
     this.me,
     this.race,
+    this.course,
   });
 
   final Phase phase;
@@ -144,6 +210,7 @@ class RoomView {
   final List<PlayerInfo> players;
   final Me? me;
   final RaceInfo? race;
+  final CourseInfo? course;
   final List<PublicBet> bets;
 
   factory RoomView.fromJson(Map<String, dynamic> j) => RoomView(
@@ -158,5 +225,6 @@ class RoomView {
         bets: _list(j['bets'], PublicBet.fromJson),
         me: j['me'] == null ? null : Me.fromJson(j['me'] as Map<String, dynamic>),
         race: j['race'] == null ? null : RaceInfo.fromJson(j['race'] as Map<String, dynamic>),
+        course: j['course'] is Map<String, dynamic> ? CourseInfo.fromJson(j['course'] as Map<String, dynamic>) : null,
       );
 }

@@ -1,5 +1,6 @@
 import 'package:derby/src/protocol.dart';
 import 'package:derby/src/views/betting_view.dart';
+import 'package:derby/src/widgets/horse_face.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -110,6 +111,46 @@ void main() {
     await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'この内容で賭ける'));
     expect(bets, [(1, 300)]);
+  });
+
+  testWidgets('出走表に、調子・表情・脚質・近走・距離と馬場が出る', (tester) async {
+    const detailed = [
+      HorseInfo(no: 1, name: 'ハヤテオー', odds: 2.4, sex: '牡', age: 4, weight: 482, weightDiff: 2, style: '先行',
+          recent: [1, 3, 2], pop: 1, cond: 5, mood: 'fired', hasDetails: true),
+      HorseInfo(no: 2, name: 'ミドリノカゼ', odds: 5.1, sex: '牝', age: 3, weight: 446, weightDiff: -6, style: '追込',
+          recent: [5, 2, 8], pop: 2, cond: 2, mood: 'sleepy', hasDetails: true),
+    ];
+    const view = RoomView(
+      phase: Phase.betting, raceNo: 1, totalRaces: 5, serverNow: 0, betCount: 0, onlineCount: 1,
+      horses: detailed, players: [], bets: [],
+      course: CourseInfo(distance: 1600, going: '稍重'),
+      me: Me(id: 'a', name: 'たろう', coins: 1000, rank: 1),
+    );
+    await pump(tester, view);
+    expect(find.textContaining('芝 1600m'), findsOneWidget);
+    expect(find.textContaining('稍重'), findsOneWidget);
+    expect(find.text('絶好調'), findsOneWidget);
+    expect(find.text('不調'), findsOneWidget);
+    expect(find.textContaining('牡4'), findsOneWidget);
+    expect(find.textContaining('482kg(+2)'), findsOneWidget);
+    expect(find.textContaining('先行'), findsOneWidget);
+    expect(find.textContaining('1-3-2'), findsOneWidget);
+    expect(find.textContaining('446kg(-6)'), findsOneWidget);
+    final faces = tester.widgetList<HorseFace>(find.byType(HorseFace)).map((f) => f.mood).toList();
+    expect(faces, ['fired', 'sleepy']);
+    expect(tester.takeException(), isNull);
+    // 選んで賭ける操作は今までどおり
+    await tester.tap(find.text('ミドリノカゼ'));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'この内容で賭ける'));
+    expect(bets, [(2, 100)]);
+  });
+
+  testWidgets('詳細のない出走馬(古いサーバー)は、名前と倍率だけ出る', (tester) async {
+    await pump(tester, bettingView());
+    expect(find.byType(HorseFace), findsNothing);
+    expect(find.text('普通'), findsNothing);
+    expect(find.text('5.1倍'), findsOneWidget);
   });
 
   testWidgets('所持金が 10 未満なら賭けられず、案内が出る', (tester) async {

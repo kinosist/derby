@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../format.dart';
 import '../protocol.dart';
 import '../widgets/horse_colors.dart';
+import '../widgets/horse_face.dart';
 
 const _minBet = 10;
 
@@ -69,6 +70,14 @@ class _BettingViewState extends State<BettingView> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
             children: [
+              if (widget.view.course case final course?)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
+                  child: Text(
+                    '芝 ${course.distance}m ・ 馬場: ${course.going}  調子と表情の良い馬は、倍率より勝ちやすい',
+                    style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                ),
               for (final h in widget.view.horses)
                 _HorseRow(
                   horse: h,
@@ -251,27 +260,73 @@ class _HorseRow extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            padding: EdgeInsets.symmetric(horizontal: 10, vertical: horse.hasDetails ? 6 : 9),
             child: Row(
               children: [
-                HorseBadge(horse.no),
-                const SizedBox(width: 12),
+                if (horse.hasDetails) ...[
+                  HorseFace(no: horse.no, mood: horse.mood, size: 46),
+                  const SizedBox(width: 8),
+                ],
+                HorseBadge(horse.no, size: horse.hasDetails ? 28 : 32),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: Text(
-                    horse.name,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        horse.name,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                      ),
+                      if (horse.hasDetails)
+                        Text(
+                          _details(horse),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                          style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                        ),
+                    ],
                   ),
                 ),
-                Text(
-                  formatOdds(horse.odds),
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: scheme.primary),
+                const SizedBox(width: 6),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      formatOdds(horse.odds),
+                      style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: scheme.primary, height: 1.2),
+                    ),
+                    if (horse.hasDetails) _Condition(horse.cond),
+                  ],
                 ),
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  /// 例: 「牡4 482kg(+2) 先行 近走 1-3-2」
+  static String _details(HorseInfo h) {
+    final diff = h.weightDiff > 0 ? '+${h.weightDiff}' : (h.weightDiff == 0 ? '±0' : '${h.weightDiff}');
+    return '${h.sex}${h.age} ${h.weight}kg($diff) ${h.style} 近走 ${h.recent.join('-')}';
+  }
+}
+
+/// 調子の表示(矢印と名前)
+class _Condition extends StatelessWidget {
+  const _Condition(this.cond);
+  final int cond;
+
+  @override
+  Widget build(BuildContext context) {
+    final (arrow, label, color) = conditionDisplay(cond);
+    final style = TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: color, height: 1.2);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [Text('$arrow ', style: style), Text(label, style: style)],
     );
   }
 }

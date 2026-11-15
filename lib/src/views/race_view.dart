@@ -47,6 +47,9 @@ class _RaceViewState extends State<RaceView> with SingleTickerProviderStateMixin
     ];
     final allIn = race.times.isNotEmpty && progress.every((p) => p >= 1.0);
     final order = allIn && race.order.isNotEmpty ? race.order : liveOrder(race.times, elapsed);
+    final distance = view.course?.distance ?? 1600;
+    final lead = progress.fold(0.0, math.max);
+    final remain = ((distance * (1 - lead)) / 10).round() * 10;
     final bet = view.me?.bet;
     final betHorse = bet == null ? null : view.horses.where((h) => h.no == bet.horse).firstOrNull;
 
@@ -54,13 +57,16 @@ class _RaceViewState extends State<RaceView> with SingleTickerProviderStateMixin
       padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
       child: Column(
         children: [
-          Expanded(child: RaceTrack(progress: progress, myHorse: bet?.horse, animMs: elapsed)),
+          Expanded(
+            child: RaceTrack(progress: progress, myHorse: bet?.horse, animMs: elapsed, distance: distance),
+          ),
           const SizedBox(height: 10),
           Row(
             children: [
               Text(allIn ? 'ゴール ' : '順位 ', style: theme.textTheme.titleSmall),
               for (final no in order)
-                Padding(padding: const EdgeInsets.only(right: 4), child: HorseBadge(no, size: 28)),
+                Padding(padding: const EdgeInsets.only(right: 3), child: HorseBadge(no, size: 26)),
+
             ],
           ),
           const SizedBox(height: 8),
@@ -78,6 +84,10 @@ class _RaceViewState extends State<RaceView> with SingleTickerProviderStateMixin
                 ),
               ] else
                 Expanded(child: Text('見送り', style: theme.textTheme.titleMedium)),
+              if (lead < 1.0) ...[
+                const SizedBox(width: 8),
+                Text('残り ${remain}m', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+              ],
             ],
           ),
           SizedBox(

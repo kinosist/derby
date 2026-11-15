@@ -4,6 +4,9 @@
 const KEY_STORAGE = 'derby.teacherKey';
 const HORSE_COLORS = ['#ffffff', '#1b1b1b', '#d6282b', '#1f5fd1', '#f2cf1d', '#1f9a4a', '#f08a1c', '#f29ac0'];
 const HORSE_TEXT = ['#111', '#fff', '#fff', '#fff', '#111', '#fff', '#fff', '#111'];
+const COND_LABELS = { 5: ['↑', '絶好調'], 4: ['↗', '好調'], 3: ['→', '普通'], 2: ['↘', '不調'], 1: ['↓', '絶不調'] };
+const MOOD_LABELS = { fired: '気合十分', happy: 'ごきげん', calm: '落ち着き', restless: 'そわそわ', sleepy: '眠そう' };
+const COAT_COLORS = ['#7a4a2a', '#3b2a22', '#a0612f', '#8d8d8d', '#5a3a26', '#b5793f', '#2b2b2f', '#946037'];
 const PHASE_LABELS = { lobby: '参加受付中', betting: '賭け受付中', racing: 'レース中', result: '結果', final: '最終結果' };
 
 const $ = (id) => document.getElementById(id);
@@ -219,17 +222,40 @@ const STAGES = {
   betting: {
     build(v) {
       const stage = $('stage');
-      stage.append(el('h2', '', '出走表'));
-      stage.append(el('p', 'hint', '1着になる馬を当てます。倍率が高い馬ほど勝ちにくく、当たれば大きく増えます。'));
-      const field = el('div', 'field');
+      const c = v.course;
+      stage.append(el('h2', '', c ? `出走表  芝 ${c.distance}m  馬場: ${c.going}` : '出走表'));
+      stage.append(el('p', 'hint', '1着になる馬を当てます。倍率は実力で決まります。今日の「調子」と「表情」が良い馬は、倍率より勝ちやすくなります(どちらも、たまに当てになりません)。'));
+      const table = el('div', 'field');
+      const head = el('div', 'row head');
+      for (const t of ['', '', '馬名', '性齢', '馬体重', '脚質', '近走', '調子', '表情', '倍率', '人気']) head.append(el('span', '', t));
+      table.append(head);
       for (const h of v.horses) {
         const row = el('div', 'row');
+        const face = el('canvas', 'face');
+        face.width = 112;
+        face.height = 112;
+        if (h.mood) drawFace(face.getContext('2d'), 112, h.no, h.mood);
+        const cond = COND_LABELS[h.cond];
+        const condEl = el('span', `cond c${h.cond ?? 3}`, cond ? `${cond[0]} ${cond[1]}` : '');
+        const diff = h.weightDiff > 0 ? `+${h.weightDiff}` : h.weightDiff === 0 ? '±0' : `${h.weightDiff}`;
         const odds = el('span', 'odds', h.odds.toFixed(1));
         odds.append(el('small', '', ' 倍'));
-        row.append(horseBadge(h.no), el('span', 'hname', h.name), odds);
-        field.append(row);
+        row.append(
+          face,
+          horseBadge(h.no),
+          el('span', 'hname', h.name),
+          el('span', '', h.sex ? `${h.sex}${h.age}` : ''),
+          el('span', '', h.weight ? `${h.weight}kg(${diff})` : ''),
+          el('span', '', h.style ?? ''),
+          el('span', 'recent', h.recent ? h.recent.join('-') : ''),
+          condEl,
+          el('span', 'mood', MOOD_LABELS[h.mood] ?? ''),
+          odds,
+          el('span', 'pop', h.pop ? `${h.pop}番人気` : ''),
+        );
+        table.append(row);
       }
-      stage.append(field);
+      stage.append(table);
     },
   },
 
@@ -327,10 +353,21 @@ function horseProgress(times, elapsed) {
   return (i + (elapsed - times[i]) / (times[i + 1] - times[i])) / n;
 }
 
+/** コースの長さ(画面幅の何倍か)。距離が長いほど長い。 */
+function trackScale(distance) {
+  return 3 + (Math.min(2400, Math.max(1200, distance)) - 1200) / 600;
+}
+
+/** カメラの左端の位置。先頭の馬を画面の右寄りに置き、コースの両端では止める。 */
+function cameraX(leaderX, viewW, worldW) {
+  return Math.min(Math.max(leaderX - viewW * 0.7, 0), Math.max(worldW - viewW, 0));
+}
+
 function startRace(canvas, v) {
   const ctx = canvas.getContext('2d');
   const race = v.race;
   const horses = v.horses;
+  const distance = v.course?.distance ?? 1600;
   let lastOrderKey = '';
 
   const frame = () => {
@@ -345,7 +382,7 @@ function startRace(canvas, v) {
 
     const elapsed = Date.now() + clockOffset - race.startedAt;
     const progress = race.times.map((t) => horseProgress(t, elapsed));
-    drawTrack(ctx, w, h, horses, progress, elapsed);
+    drawTrack(ctx, w, h, horses, progress, elapsed, distance);
 
     // その時点の順位
     const order = horses.map((x) => x.no).sort((a, b) => progress[b - 1] - progress[a - 1] || a - b);
@@ -364,22 +401,39 @@ function startRace(canvas, v) {
   raf = requestAnimationFrame(frame);
 }
 
-function drawTrack(ctx, w, h, horses, progress, elapsed) {
+function drawTrack(ctx, w, h, horses, progress, elapsed, distance) {
+  const mapH = 34; // 上部の全体図
+  const trackH = h - mapH;
   const lanes = horses.length;
-  const laneH = h / lanes;
-  const startX = Math.max(70, w * 0.07);
-  const goalX = w - Math.max(60, w * 0.05);
+  const laneH = trackH / lanes;
+  const size = Math.min(laneH * 0.78, 90);
+  const startX = size + 20;
+  const worldW = w * trackScale(distance);
+  const goalX = worldW - Math.max(70, w * 0.06);
+  const xOf = (p) => startX + (goalX - startX) * p;
+  const lead = Math.max(0, ...progress);
+  const cam = cameraX(xOf(lead), w, worldW);
 
+  // ---- コース(カメラに合わせて流れる) ----
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, mapH, w, trackH);
+  ctx.clip();
+  ctx.translate(-cam, mapH);
   for (let i = 0; i < lanes; i++) {
     ctx.fillStyle = i % 2 === 0 ? '#2f8f4a' : '#2a8444';
-    ctx.fillRect(0, i * laneH, w, laneH);
+    ctx.fillRect(cam, i * laneH, w, laneH);
   }
+  // 芝の刈り目(流れて見えるように、コースに固定した縦じま)
+  const stripe = 160;
+  ctx.fillStyle = 'rgba(255,255,255,0.045)';
+  for (let x = Math.floor(cam / stripe) * stripe; x < cam + w; x += stripe * 2) ctx.fillRect(x, 0, stripe, trackH);
   ctx.strokeStyle = 'rgba(255,255,255,0.35)';
   ctx.lineWidth = 1;
   for (let i = 1; i < lanes; i++) {
     ctx.beginPath();
-    ctx.moveTo(0, i * laneH);
-    ctx.lineTo(w, i * laneH);
+    ctx.moveTo(cam, i * laneH);
+    ctx.lineTo(cam + w, i * laneH);
     ctx.stroke();
   }
   // スタート線
@@ -387,30 +441,213 @@ function drawTrack(ctx, w, h, horses, progress, elapsed) {
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(startX, 0);
-  ctx.lineTo(startX, h);
+  ctx.lineTo(startX, trackH);
   ctx.stroke();
+  // 200m ごとの標識(残り距離)
+  ctx.font = '700 16px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  for (let remain = 200; remain < distance; remain += 200) {
+    const x = xOf(1 - remain / distance);
+    if (x < cam - 80 || x > cam + w + 80) continue;
+    ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+    ctx.setLineDash([8, 8]);
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, trackH);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillText(`残り${remain}m`, x, 4);
+  }
   // ゴール線(市松模様)
   const sq = Math.max(6, laneH / 6);
-  for (let y = 0, r = 0; y < h; y += sq, r++) {
+  for (let y = 0, r = 0; y < trackH; y += sq, r++) {
     for (let c = 0; c < 2; c++) {
       ctx.fillStyle = (r + c) % 2 === 0 ? '#fff' : '#111';
       ctx.fillRect(goalX + c * sq, y, sq, sq);
     }
   }
-
-  const size = Math.min(laneH * 0.78, 90);
   horses.forEach((horse, i) => {
     const p = progress[i];
-    const x = startX + (goalX - startX) * p;
-    const y = i * laneH + laneH / 2;
-    drawHorse(ctx, x, y, size, horse.no, p > 0 && p < 1 ? elapsed : 0);
-    // 馬名(レーンの左端)
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    ctx.font = `600 ${Math.max(12, Math.min(18, laneH * 0.26))}px sans-serif`;
-    ctx.textBaseline = 'top';
-    ctx.textAlign = 'left';
-    ctx.fillText(horse.name, 8, i * laneH + 4);
+    drawHorse(ctx, xOf(p), i * laneH + laneH / 2, size, horse.no, p > 0 && p < 1 ? elapsed : 0);
   });
+  ctx.restore();
+
+  // ---- 全体図(画面に固定): 全馬の位置と残り距離 ----
+  ctx.fillStyle = '#14562a';
+  ctx.fillRect(0, 0, w, mapH);
+  const mapL = 150;
+  const mapR = w - 40;
+  ctx.fillStyle = '#fff';
+  ctx.font = '700 18px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  const remain = Math.max(0, Math.round((distance * (1 - lead)) / 10) * 10);
+  ctx.fillText(lead >= 1 ? 'ゴール!' : `残り ${remain}m`, 12, mapH / 2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(mapL, mapH / 2);
+  ctx.lineTo(mapR, mapH / 2);
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(mapR, 6, 3, mapH - 12);
+  // 遅い馬を先に描き、先頭の馬が上に来るようにする
+  [...horses].sort((a, b) => progress[a.no - 1] - progress[b.no - 1]).forEach((horse) => {
+    const x = mapL + (mapR - mapL) * progress[horse.no - 1];
+    ctx.beginPath();
+    ctx.arc(x, mapH / 2, 8, 0, Math.PI * 2);
+    ctx.fillStyle = HORSE_COLORS[horse.no - 1];
+    ctx.fill();
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  });
+}
+
+/**
+ * 正面から見た馬の顔。表情(mood)で目・耳・口と小物を変える。size は一辺の長さ。
+ * アプリ(lib/src/widgets/horse_face.dart)と同じ形。
+ */
+function drawFace(ctx, size, no, mood) {
+  const s = size / 60;
+  ctx.save();
+  ctx.scale(s, s);
+  const coat = COAT_COLORS[(no - 1) % COAT_COLORS.length];
+  const dark = '#241812';
+  // 耳(表情で向きが変わる)
+  const ear = { fired: [0, -1], happy: [-1, -1], calm: [-1, -1], restless: [-5, 2], sleepy: [-7, 5] }[mood] ?? [-1, -1];
+  ctx.fillStyle = coat;
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(30 + side * 8, 14);
+    ctx.lineTo(30 + side * (14 - ear[0]), 2 + ear[1]);
+    ctx.lineTo(30 + side * 16, 16);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // 頭と鼻づら
+  ctx.beginPath();
+  ctx.ellipse(30, 26, 15, 17, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(30, 43, 12, 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // たてがみ(前髪)
+  ctx.fillStyle = dark;
+  ctx.beginPath();
+  ctx.moveTo(24, 10);
+  ctx.quadraticCurveTo(30, 4, 36, 10);
+  ctx.quadraticCurveTo(32, 18, 30, 20);
+  ctx.quadraticCurveTo(27, 16, 24, 10);
+  ctx.fill();
+  // 鼻づらの色と鼻の穴
+  ctx.fillStyle = 'rgba(255,235,215,0.35)';
+  ctx.beginPath();
+  ctx.ellipse(30, 45, 10, 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = dark;
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.ellipse(30 + side * 5, 44, 1.8, 2.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.strokeStyle = dark;
+  ctx.lineCap = 'round';
+  ctx.lineWidth = 2;
+  const eyeY = 27;
+  for (const side of [-1, 1]) {
+    const ex = 30 + side * 9;
+    if (mood === 'happy') {
+      // にっこり閉じた目
+      ctx.beginPath();
+      ctx.arc(ex, eyeY + 1, 3.2, Math.PI * 1.1, Math.PI * 1.9);
+      ctx.stroke();
+    } else if (mood === 'sleepy') {
+      // 半分閉じた目
+      ctx.beginPath();
+      ctx.moveTo(ex - 3.2, eyeY + 1);
+      ctx.lineTo(ex + 3.2, eyeY + 1);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(ex, eyeY + 1, 3.2, 0.15 * Math.PI, 0.85 * Math.PI);
+      ctx.stroke();
+    } else if (mood === 'restless') {
+      // 見開いて横目
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(ex, eyeY, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = dark;
+      ctx.beginPath();
+      ctx.arc(ex + 1.8, eyeY + 0.5, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = dark;
+      ctx.beginPath();
+      ctx.arc(ex, eyeY, mood === 'fired' ? 2.8 : 2.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(ex + 0.9, eyeY - 0.9, 0.8, 0, Math.PI * 2);
+      ctx.fill();
+      if (mood === 'fired') {
+        // つり上がった眉
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        ctx.moveTo(ex + side * 5, eyeY - 7.5);
+        ctx.lineTo(ex - side * 4, eyeY - 4);
+        ctx.stroke();
+        ctx.lineWidth = 2;
+      }
+    }
+  }
+  // 口
+  ctx.beginPath();
+  if (mood === 'happy') ctx.arc(30, 49, 4.5, 0.15 * Math.PI, 0.85 * Math.PI);
+  else if (mood === 'fired') { ctx.moveTo(25, 51.5); ctx.lineTo(35, 51.5); }
+  else if (mood === 'restless') { ctx.moveTo(25, 51); ctx.quadraticCurveTo(27.5, 49, 30, 51); ctx.quadraticCurveTo(32.5, 53, 35, 51); }
+  else if (mood === 'sleepy') ctx.arc(30, 51, 1.6, 0, Math.PI * 2);
+  else { ctx.moveTo(26.5, 51); ctx.lineTo(33.5, 51); }
+  ctx.stroke();
+  // 小物
+  if (mood === 'fired') {
+    // 鼻息
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    for (const side of [-1, 1]) {
+      for (const [dx, dy, r] of [[12, 3, 3.4], [16, 1, 2.6], [19.5, 3.5, 2]]) {
+        ctx.beginPath();
+        ctx.arc(30 + side * dx, 44 + dy, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  } else if (mood === 'restless') {
+    // 汗
+    ctx.fillStyle = '#6ec6ff';
+    ctx.beginPath();
+    ctx.moveTo(49, 14);
+    ctx.quadraticCurveTo(53.5, 21, 49, 23);
+    ctx.quadraticCurveTo(44.5, 21, 49, 14);
+    ctx.fill();
+  } else if (mood === 'sleepy') {
+    ctx.fillStyle = '#dfe9ff';
+    ctx.font = '800 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('z', 49, 13);
+    ctx.font = '800 8px sans-serif';
+    ctx.fillText('z', 55, 6);
+  } else if (mood === 'happy') {
+    // ほっぺ
+    ctx.fillStyle = 'rgba(255,120,120,0.45)';
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(30 + side * 11.5, 33, 3, 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
 }
 
 /** 右向きの馬。鼻先が x に来るように描く。 */

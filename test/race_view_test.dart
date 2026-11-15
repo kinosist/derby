@@ -10,8 +10,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const now = 1000000;
 
+const moods = ['fired', 'happy', 'calm', 'restless', 'sleepy'];
 final horses = [
-  for (var no = 1; no <= 8; no++) HorseInfo(no: no, name: 'ウマ$no', odds: 2.0 + no),
+  for (var no = 1; no <= 8; no++)
+    HorseInfo(no: no, name: 'ワクワクジャーニー$no', odds: 20.0 + no, sex: '牡', age: 4, weight: 518, weightDiff: -10,
+        style: '追込', recent: const [10, 12, 11], pop: no, cond: 1 + no % 5, mood: moods[no % 5], hasDetails: true),
 ];
 
 // 馬番 1 が最も速く、8 が最も遅い。区間ごとに少し緩急を付ける。
@@ -27,6 +30,7 @@ RoomView view(Phase phase, {int startedAt = now - 8000, Bet? bet, LastResult? la
       betCount: 1,
       onlineCount: 2,
       horses: phase == Phase.lobby || phase == Phase.finalResult ? const [] : horses,
+      course: phase == Phase.lobby || phase == Phase.finalResult ? null : const CourseInfo(distance: 2400, going: '不良'),
       players: [
         PlayerInfo(id: 'a', name: 'たろうたろうたろうたろう', coins: coins, rank: 1, online: true),
         const PlayerInfo(id: 'b', name: 'はなこ', coins: 900, rank: 2, online: false),
@@ -68,6 +72,8 @@ void main() {
     }
     expect(track.progress[0], greaterThan(track.progress[7]));
     expect(track.myHorse, 3);
+    expect(track.distance, 2400);
+    expect(find.textContaining('残り'), findsOneWidget);
     expect(find.text('結果を待っています…'), findsNothing);
     expect(find.textContaining('300'), findsWidgets);
   });

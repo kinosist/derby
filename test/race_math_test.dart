@@ -33,4 +33,21 @@ void main() {
     expect(liveOrder([slow, fast, slow, even], 8000), [2, 1, 3, 4]);
     expect(liveOrder([slow, fast, slow, even], 0), [1, 2, 3, 4]);
   });
+
+  test('trackScale: 距離が長いほどコースが長い(画面幅の 3〜5 倍)', () {
+    expect(trackScale(1200), 3.0);
+    expect(trackScale(1800), 4.0);
+    expect(trackScale(2400), 5.0);
+    expect(trackScale(800), 3.0);
+    expect(trackScale(3600), 5.0);
+  });
+
+  test('cameraX: 先頭の馬を画面の右寄り(7割の位置)に置き、両端では止まる', () {
+    // 画面幅 400、コース全長 1600
+    expect(cameraX(100, 400, 1600), 0.0); // スタート直後は左端で止まる
+    expect(cameraX(280, 400, 1600), 0.0);
+    expect(cameraX(680, 400, 1600), 400.0); // 680 - 400*0.7
+    expect(cameraX(1590, 400, 1600), 1200.0); // ゴール前は右端で止まる
+    expect(cameraX(100, 400, 300), 0.0); // コースが画面より短くても負にならない
+  });
 }

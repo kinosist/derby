@@ -119,14 +119,40 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outl
 .chip.offline { color: #9aa79d; background: #f1f3f1; }
 
 /* ---- 出走表 ---- */
-.field { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; align-content: start; }
+.stage .hint { font-size: 18px; }
+.field { display: grid; gap: 4px; align-content: start; min-height: 0; }
 .field .row {
-  display: flex; align-items: center; gap: 14px;
-  padding: 10px 16px; border: 2px solid var(--line); border-radius: 12px; background: #fff; font-size: 26px;
+  display: grid;
+  /* 見出し行と文字サイズが違ってもずれないよう、列幅は px で決める */
+  grid-template-columns: 56px 44px minmax(0, 1fr) 56px 150px 60px 110px 120px 100px 112px 90px;
+  align-items: center; column-gap: 12px;
+  padding: 2px 14px 2px 6px; border: 2px solid var(--line); border-radius: 12px; background: #fff; font-size: 20px;
 }
-.field .hname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
-.field .odds { font-size: 30px; font-weight: 800; color: var(--turf-dark); }
-.field .odds small { font-size: 18px; font-weight: 400; color: var(--muted); }
+.field .row.head { border: 0; background: transparent; font-size: 15px; color: var(--muted); padding-top: 0; padding-bottom: 0; }
+.field .face { width: 52px; height: 52px; border-radius: 50%; background: #dfeee2; }
+.field .hname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; font-size: 22px; }
+.field .row > span { white-space: nowrap; }
+.field .recent { letter-spacing: 0.02em; }
+.field .cond { font-weight: 800; white-space: nowrap; }
+.field .cond.c5 { color: #c62828; }
+.field .cond.c4 { color: #e06a00; }
+.field .cond.c3 { color: #5d6f62; }
+.field .cond.c2 { color: #2a6fbf; }
+.field .cond.c1 { color: #283593; }
+.field .mood { font-size: 17px; white-space: nowrap; }
+.field .odds { font-size: 26px; font-weight: 800; color: var(--turf-dark); text-align: right; white-space: nowrap; }
+.field .odds small { font-size: 15px; font-weight: 400; color: var(--muted); }
+.field .pop { font-size: 16px; color: var(--muted); white-space: nowrap; }
+
+/* 大きな画面(投影)では、顔と文字を大きくする */
+@media (min-height: 900px) {
+  .field { gap: 6px; }
+  .field .row { grid-template-columns: 84px 48px minmax(0, 1fr) 62px 168px 66px 122px 136px 112px 124px 100px; font-size: 22px; padding: 3px 14px 3px 6px; }
+  .field .face { width: 78px; height: 78px; }
+  .field .hname { font-size: 26px; }
+  .field .odds { font-size: 30px; }
+  .field .no { font-size: 24px; }
+}
 
 /* ---- レース ---- */
 .track-wrap { flex: 1; min-height: 0; position: relative; border-radius: 14px; overflow: hidden; border: 2px solid var(--turf-dark); }
@@ -165,7 +191,18 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outl
   .top { padding: 8px 24px; }
   .race-label { font-size: 28px; }
   .stage { padding: 14px 24px; }
-  .field .row { padding: 6px 14px; font-size: 22px; }
+  .stage h2 { margin-bottom: 4px; font-size: 22px; }
+  .stage .hint { font-size: 15px; margin-bottom: 6px; }
+  .field { gap: 2px; }
+  /* 狭い画面では「表情」の文字の列を省く(顔の絵で分かる) */
+  .field .row { font-size: 17px; column-gap: 8px; padding: 0 10px 0 4px; border-width: 1px;
+    grid-template-columns: 40px 40px minmax(0, 1fr) 44px 122px 44px 88px 96px 88px 70px; }
+  .field .row > :nth-child(9) { display: none; }
+  .field .row.head { font-size: 13px; }
+  .field .face { width: 40px; height: 40px; }
+  .field .hname { font-size: 18px; }
+  .field .odds { font-size: 21px; }
+  .field .mood, .field .pop { font-size: 14px; }
   .primary.big { font-size: 26px; padding: 10px 32px; }
   .lobby-count { font-size: 48px; }
   .order li { font-size: 20px; padding: 2px 10px; }

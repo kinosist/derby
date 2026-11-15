@@ -97,6 +97,40 @@ void main() {
     expect(v.horses, isEmpty);
   });
 
+  test('出走馬の詳細と、距離・馬場を読む', () {
+    final v = parse('''
+{"phase":"betting","raceNo":1,"totalRaces":5,"serverNow":0,"players":[],"betCount":0,"onlineCount":0,"me":null,"race":null,"bets":[],
+ "course":{"distance":2400,"going":"稍重"},
+ "horses":[{"no":1,"name":"ハヤテオー","odds":2.4,"sex":"牡","age":4,"weight":482,"weightDiff":-6,
+            "style":"追込","recent":[1,3,12],"pop":1,"cond":5,"mood":"fired"}]}''');
+    expect(v.course!.distance, 2400);
+    expect(v.course!.going, '稍重');
+    final h = v.horses.single;
+    expect(h.sex, '牡');
+    expect(h.age, 4);
+    expect(h.weight, 482);
+    expect(h.weightDiff, -6);
+    expect(h.style, '追込');
+    expect(h.recent, [1, 3, 12]);
+    expect(h.pop, 1);
+    expect(h.cond, 5);
+    expect(h.mood, 'fired');
+    expect(h.hasDetails, true);
+  });
+
+  test('古いサーバー(詳細なし)の出走馬も読める', () {
+    final v = parse('''
+{"phase":"betting","raceNo":1,"totalRaces":5,"serverNow":0,"players":[],"betCount":0,"onlineCount":0,"me":null,"race":null,"bets":[],
+ "horses":[{"no":1,"name":"ハヤテオー","odds":2.4}]}''');
+    expect(v.course, isNull);
+    final h = v.horses.single;
+    expect(h.hasDetails, false);
+    expect(h.cond, 3);
+    expect(h.mood, 'calm');
+    expect(h.recent, isEmpty);
+    expect(h.style, '');
+  });
+
   test('phase の対応', () {
     for (final e in {'lobby': Phase.lobby, 'betting': Phase.betting, 'racing': Phase.racing, 'result': Phase.result}.entries) {
       final v = parse('{"phase":"${e.key}","raceNo":0,"totalRaces":5,"serverNow":0,"horses":[],"players":[],"betCount":0,"onlineCount":0,"me":null,"race":null,"bets":[]}');
