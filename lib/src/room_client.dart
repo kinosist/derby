@@ -69,6 +69,7 @@ class RoomClient extends ChangeNotifier {
   String? _id;
   String? _savedName;
   String? _lastError;
+  OddsTable? _oddsTable;
   int _clockOffsetMs = 0;
 
   /// 参加したい名前。null なら部屋に入るつもりがない(接続も再接続もしない)。
@@ -85,6 +86,9 @@ class RoomClient extends ChangeNotifier {
 
   /// 部屋に入ろうとしている(参加を押した、または参加済み)。つながっていなければ再接続を続けている。
   bool get wantsRoom => _wantedName != null;
+
+  /// 単勝以外の倍率表(賭け受付が始まるときに届く)。view.raceKey と一致するものだけ使うこと。
+  OddsTable? get oddsTable => _oddsTable;
 
   /// 直近のエラーの文言。次の操作で消える。
   String? get lastError => _lastError;
@@ -121,15 +125,23 @@ class RoomClient extends ChangeNotifier {
     _notify();
   }
 
-  void placeBet(int horse, int amount) {
+  /// 馬券を 1 点買う。同じ種類・同じ馬の馬券があれば、金額を置き換える。
+  void placeTicket(BetType type, List<int> horses, int amount) {
     _lastError = null;
-    _send({'t': 'bet', 'horse': horse, 'amount': amount});
+    if (_view?.raceKey == null && type == BetType.win && horses.length == 1) {
+      // 古いサーバー(単勝 1 点だけ)向けの形式
+      _send({'t': 'bet', 'horse': horses[0], 'amount': amount});
+    } else {
+      _send({'t': 'bet', 'type': type.wire, 'horses': horses, 'amount': amount});
+    }
     _notify();
   }
 
-  void cancelBet() {
+  /// 馬券を 1 点取り消す。
+  void cancelTicket(String ticketId) {
     _lastError = null;
-    _send({'t': 'cancelBet'});
+    // 'legacy' は古いサーバーの単勝 1 点。id を指定せずに取り消す。
+    _send(ticketId == 'legacy' ? {'t': 'cancelBet'} : {'t': 'cancelBet', 'id': ticketId});
     _notify();
   }
 
@@ -249,6 +261,13 @@ class RoomClient extends ChangeNotifier {
         final me = view.me;
         if (me != null) _remember(me.id, me.name);
         _notify();
+      case 'odds':
+        try {
+          _oddsTable = OddsTable.fromJson(message);
+        } catch (_) {
+          return;
+        }
+        _notify();
       case 'error':
         final code = message['code'];
         final errorText = message['message'] is String ? message['message'] as String : 'エラーが起きました';
@@ -281,6 +300,7 @@ class RoomClient extends ChangeNotifier {
     _closeTransport();
     _status = ConnStatus.disconnected;
     _view = null;
+    _oddsTable = null;
     _lastError = error;
     _notify();
   }

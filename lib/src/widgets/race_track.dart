@@ -8,13 +8,13 @@ import 'horse_colors.dart';
 /// コースと馬を描く。8 レーンを縦に並べ、馬は左から右へ走る。
 /// コースは画面より長く、先頭の馬を追って横に流れる。上部に全馬の位置が分かる全体図を出す。
 class RaceTrack extends StatelessWidget {
-  const RaceTrack({super.key, required this.progress, this.myHorse, this.animMs = 0, this.distance = 1600});
+  const RaceTrack({super.key, required this.progress, this.myHorses = const {}, this.animMs = 0, this.distance = 1600});
 
   /// progress[馬番-1] は進み具合(0.0〜1.0)
   final List<double> progress;
 
-  /// 自分が賭けた馬番(レーンを強調する)
-  final int? myHorse;
+  /// 自分の馬券に入っている馬番(レーンを強調する)
+  final Set<int> myHorses;
 
   /// 脚の動きに使う経過時間
   final int animMs;
@@ -27,7 +27,7 @@ class RaceTrack extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: CustomPaint(
-        painter: _TrackPainter(progress: progress, myHorse: myHorse, animMs: animMs, distance: distance),
+        painter: _TrackPainter(progress: progress, myHorses: myHorses, animMs: animMs, distance: distance),
         child: const SizedBox.expand(),
       ),
     );
@@ -35,9 +35,9 @@ class RaceTrack extends StatelessWidget {
 }
 
 class _TrackPainter extends CustomPainter {
-  _TrackPainter({required this.progress, required this.myHorse, required this.animMs, required this.distance});
+  _TrackPainter({required this.progress, required this.myHorses, required this.animMs, required this.distance});
   final List<double> progress;
-  final int? myHorse;
+  final Set<int> myHorses;
   final int animMs;
   final int distance;
 
@@ -62,7 +62,7 @@ class _TrackPainter extends CustomPainter {
     canvas.translate(-cam, _mapH);
     final fill = Paint();
     for (var i = 0; i < lanes; i++) {
-      final mine = myHorse == i + 1;
+      final mine = myHorses.contains(i + 1);
       fill.color = mine
           ? const Color(0xFF3FA95C)
           : (i.isEven ? const Color(0xFF2F8F4A) : const Color(0xFF2A8444));
@@ -81,8 +81,8 @@ class _TrackPainter extends CustomPainter {
       canvas.drawLine(Offset(cam, i * laneH), Offset(cam + size.width, i * laneH), line);
     }
     // 自分の馬のレーンの枠
-    final my = myHorse;
-    if (my != null && my >= 1 && my <= lanes) {
+    for (final my in myHorses) {
+      if (my < 1 || my > lanes) continue;
       canvas.drawRect(
         Rect.fromLTWH(cam + 1.5, (my - 1) * laneH + 1.5, size.width - 3, laneH - 3),
         Paint()
@@ -143,7 +143,8 @@ class _TrackPainter extends CustomPainter {
     // 自分の馬の点は、ほかの馬に隠れないよう最後に描く
     final byProgress = [for (var i = 0; i < progress.length; i++) i]
       ..sort((a, b) {
-        if ((myHorse == a + 1) != (myHorse == b + 1)) return myHorse == a + 1 ? 1 : -1;
+        final mineA = myHorses.contains(a + 1);
+        if (mineA != myHorses.contains(b + 1)) return mineA ? 1 : -1;
         return progress[a].compareTo(progress[b]);
       });
     final border = Paint()
@@ -152,7 +153,7 @@ class _TrackPainter extends CustomPainter {
       ..color = const Color(0xFF111111);
     for (final i in byProgress) {
       final center = Offset(mapL + (mapR - mapL) * progress[i].clamp(0.0, 1.0), _mapH / 2);
-      final mine = myHorse == i + 1;
+      final mine = myHorses.contains(i + 1);
       canvas.drawCircle(center, mine ? 7.5 : 5.5, Paint()..color = horseColor(i + 1));
       canvas.drawCircle(center, mine ? 7.5 : 5.5, border);
     }
@@ -246,7 +247,11 @@ class _TrackPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_TrackPainter old) =>
-      old.animMs != animMs || old.myHorse != myHorse || old.distance != distance || !_same(old.progress, progress);
+      old.animMs != animMs ||
+      old.distance != distance ||
+      old.myHorses.length != myHorses.length ||
+      !old.myHorses.containsAll(myHorses) ||
+      !_same(old.progress, progress);
 
   static bool _same(List<double> a, List<double> b) {
     if (a.length != b.length) return false;

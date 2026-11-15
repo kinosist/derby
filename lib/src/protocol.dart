@@ -106,46 +106,224 @@ class PlayerInfo {
       );
 }
 
-class Bet {
-  const Bet({required this.horse, required this.amount});
-  final int horse;
-  final int amount;
+/// 馬券の種類
+enum BetType {
+  win('win', '単勝', 1),
+  place('place', '複勝', 1),
+  quinella('quinella', '馬連', 2),
+  trifecta('trifecta', '3連単', 3);
 
-  factory Bet.fromJson(Map<String, dynamic> j) => Bet(horse: j['horse'] as int, amount: j['amount'] as int);
+  const BetType(this.wire, this.label, this.horseCount);
+
+  /// 通信で使う名前
+  final String wire;
+  final String label;
+
+  /// 選ぶ頭数
+  final int horseCount;
+
+  static BetType? fromWire(Object? raw) {
+    for (final t in values) {
+      if (t.wire == raw) return t;
+    }
+    return null;
+  }
 }
 
-class LastResult {
-  const LastResult({required this.horse, required this.amount, required this.won, required this.delta});
-  final int horse;
-  final int amount;
-  final bool won;
-  final int delta;
+/// 馬券の表示名(例: 「単勝 3」「馬連 3-5」「3連単 4→1→2」)
+String ticketLabel(BetType type, List<int> horses) =>
+    '${type.label} ${horses.join(type == BetType.trifecta ? '→' : '-')}';
 
-  factory LastResult.fromJson(Map<String, dynamic> j) => LastResult(
-        horse: j['horse'] as int,
-        amount: j['amount'] as int,
-        won: j['won'] as bool,
+List<int> _ints(Object? raw) => raw is List ? [for (final e in raw) if (e is int) e] : const [];
+
+/// 買った馬券 1 点。odds は買った時点の倍率。
+class Ticket {
+  const Ticket({required this.id, required this.type, required this.horses, required this.amount, required this.odds});
+  final String id;
+  final BetType type;
+  final List<int> horses;
+  final int amount;
+  final double odds;
+
+  /// 知らない種類の馬券(新しいサーバーが増やした場合)は null
+  static Ticket? fromJson(Map<String, dynamic> j) {
+    final type = BetType.fromWire(j['type']);
+    if (type == null) return null;
+    return Ticket(
+      id: j['id'] is String ? j['id'] as String : '',
+      type: type,
+      horses: _ints(j['horses']),
+      amount: j['amount'] as int,
+      odds: (j['odds'] as num).toDouble(),
+    );
+  }
+}
+
+/// 馬券 1 点の結果
+class TicketResult {
+  const TicketResult({
+    required this.type,
+    required this.horses,
+    required this.amount,
+    required this.odds,
+    required this.won,
+    required this.payout,
+  });
+  final BetType type;
+  final List<int> horses;
+  final int amount;
+  final double odds;
+  final bool won;
+  final int payout;
+
+  static TicketResult? fromJson(Map<String, dynamic> j) {
+    final type = BetType.fromWire(j['type']);
+    if (type == null) return null;
+    return TicketResult(
+      type: type,
+      horses: _ints(j['horses']),
+      amount: j['amount'] as int,
+      odds: (j['odds'] as num).toDouble(),
+      won: j['won'] as bool,
+      payout: j['payout'] as int,
+    );
+  }
+}
+
+/// 1 レースの自分の結果: 賭けた合計、差し引きの増減、馬券ごとの当たり外れ
+class Results {
+  const Results({required this.staked, required this.delta, required this.tickets});
+  final int staked;
+  final int delta;
+  final List<TicketResult> tickets;
+
+  factory Results.fromJson(Map<String, dynamic> j) => Results(
+        staked: j['staked'] as int,
         delta: j['delta'] as int,
+        tickets: [
+          for (final e in j['tickets'] as List)
+            ?TicketResult.fromJson(e as Map<String, dynamic>),
+        ],
       );
 }
 
 class Me {
-  const Me({required this.id, required this.name, required this.coins, required this.rank, this.bet, this.lastResult});
+  const Me({
+    required this.id,
+    required this.name,
+    required this.coins,
+    required this.rank,
+    this.tickets = const [],
+    this.results,
+  });
   final String id;
   final String name;
   final int coins;
   final int rank;
-  final Bet? bet;
-  final LastResult? lastResult;
 
-  factory Me.fromJson(Map<String, dynamic> j) => Me(
-        id: j['id'] as String,
-        name: j['name'] as String,
-        coins: j['coins'] as int,
-        rank: j['rank'] as int,
-        bet: j['bet'] == null ? null : Bet.fromJson(j['bet'] as Map<String, dynamic>),
-        lastResult: j['lastResult'] == null ? null : LastResult.fromJson(j['lastResult'] as Map<String, dynamic>),
+  /// このレースで買った馬券
+  final List<Ticket> tickets;
+
+  /// 直前のレースの結果(賭けていなければ null)
+  final Results? results;
+
+  /// 買った馬券の合計
+  int get staked => tickets.fold(0, (a, t) => a + t.amount);
+
+  factory Me.fromJson(Map<String, dynamic> j) {
+    // 古いサーバーは単勝 1 点(bet)とその結果(lastResult)だけを送る。馬券の形に直して読む。
+    final List<Ticket> tickets;
+    if (j['tickets'] is List) {
+      tickets = [
+        for (final e in j['tickets'] as List)
+          ?Ticket.fromJson(e as Map<String, dynamic>),
+      ];
+    } else if (j['bet'] case final Map<String, dynamic> bet) {
+      tickets = [Ticket(id: 'legacy', type: BetType.win, horses: [bet['horse'] as int], amount: bet['amount'] as int, odds: 0)];
+    } else {
+      tickets = const [];
+    }
+    final Results? results;
+    if (j['results'] case final Map<String, dynamic> r) {
+      results = Results.fromJson(r);
+    } else if (j['lastResult'] case final Map<String, dynamic> last when j['results'] == null && j['tickets'] == null) {
+      final amount = last['amount'] as int;
+      final delta = last['delta'] as int;
+      final won = last['won'] as bool;
+      results = Results(staked: amount, delta: delta, tickets: [
+        TicketResult(
+          type: BetType.win, horses: [last['horse'] as int], amount: amount, odds: 0, won: won, payout: won ? amount + delta : 0,
+        ),
+      ]);
+    } else {
+      results = null;
+    }
+    return Me(
+      id: j['id'] as String,
+      name: j['name'] as String,
+      coins: j['coins'] as int,
+      rank: j['rank'] as int,
+      tickets: tickets,
+      results: results,
+    );
+  }
+}
+
+/// 単勝の倍率(出走表から引く)
+double? winOdds(List<int> horses, List<HorseInfo> field) {
+  if (horses.length != 1) return null;
+  for (final h in field) {
+    if (h.no == horses[0]) return h.odds;
+  }
+  return null;
+}
+
+/// 単勝以外の倍率表。賭け受付が始まるときにサーバーから 1 回届く。
+class OddsTable {
+  const OddsTable({required this.raceKey, required this.place, required this.quinella, required this.trifecta});
+
+  /// どのレースの倍率表か(状態の raceKey と一致するものだけ使う)
+  final String raceKey;
+
+  /// place[馬番-1]
+  final List<double> place;
+
+  /// キーは「小さい馬番-大きい馬番」
+  final Map<String, double> quinella;
+
+  /// キーは「1着-2着-3着」
+  final Map<String, double> trifecta;
+
+  static Map<String, double> _map(Object? raw) => raw is Map
+      ? {
+          for (final e in raw.entries)
+            if (e.value is num) e.key as String: (e.value as num).toDouble(),
+        }
+      : const {};
+
+  factory OddsTable.fromJson(Map<String, dynamic> j) => OddsTable(
+        raceKey: j['raceKey'] as String,
+        place: j['place'] is List ? [for (final e in j['place'] as List) if (e is num) e.toDouble()] : const [],
+        quinella: _map(j['quinella']),
+        trifecta: _map(j['trifecta']),
       );
+
+  /// 馬券の倍率。選んだ頭数が足りない、表にない、などの場合は null。
+  double? oddsFor(BetType type, List<int> horses, List<HorseInfo> field) {
+    if (horses.length != type.horseCount) return null;
+    switch (type) {
+      case BetType.win:
+        return winOdds(horses, field);
+      case BetType.place:
+        final i = horses[0] - 1;
+        return i >= 0 && i < place.length ? place[i] : null;
+      case BetType.quinella:
+        final sorted = [...horses]..sort();
+        return quinella[sorted.join('-')];
+      case BetType.trifecta:
+        return trifecta[horses.join('-')];
+    }
+  }
 }
 
 class RaceInfo {
@@ -169,18 +347,35 @@ class RaceInfo {
       );
 }
 
+/// 結果画面で公開される、ほかの人も含めた賭け。
+/// horse は古いサーバー向けの要約(単勝 1 点だった頃の馬番)。tickets があればそちらを使う。
 class PublicBet {
-  const PublicBet({required this.playerId, required this.horse, required this.amount, required this.delta});
+  const PublicBet({
+    required this.playerId,
+    required this.horse,
+    required this.amount,
+    required this.delta,
+    this.tickets = const [],
+  });
   final String playerId;
   final int horse;
+
+  /// 賭けた合計
   final int amount;
   final int delta;
+  final List<TicketResult> tickets;
 
   factory PublicBet.fromJson(Map<String, dynamic> j) => PublicBet(
         playerId: j['playerId'] as String,
         horse: j['horse'] as int,
         amount: j['amount'] as int,
         delta: j['delta'] as int,
+        tickets: j['tickets'] is List
+            ? [
+                for (final e in j['tickets'] as List)
+                  ?TicketResult.fromJson(e as Map<String, dynamic>),
+              ]
+            : const [],
       );
 }
 
@@ -198,6 +393,7 @@ class RoomView {
     this.me,
     this.race,
     this.course,
+    this.raceKey,
   });
 
   final Phase phase;
@@ -211,6 +407,9 @@ class RoomView {
   final Me? me;
   final RaceInfo? race;
   final CourseInfo? course;
+
+  /// レースごとに変わる識別子(倍率表と対応させる)。古いサーバーは送らない。
+  final String? raceKey;
   final List<PublicBet> bets;
 
   factory RoomView.fromJson(Map<String, dynamic> j) => RoomView(
@@ -226,5 +425,6 @@ class RoomView {
         me: j['me'] == null ? null : Me.fromJson(j['me'] as Map<String, dynamic>),
         race: j['race'] == null ? null : RaceInfo.fromJson(j['race'] as Map<String, dynamic>),
         course: j['course'] is Map<String, dynamic> ? CourseInfo.fromJson(j['course'] as Map<String, dynamic>) : null,
+        raceKey: j['raceKey'] is String ? j['raceKey'] as String : null,
       );
 }

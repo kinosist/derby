@@ -7,6 +7,9 @@ const HORSE_TEXT = ['#111', '#fff', '#fff', '#fff', '#111', '#fff', '#fff', '#11
 const COND_LABELS = { 5: ['↑', '絶好調'], 4: ['↗', '好調'], 3: ['→', '普通'], 2: ['↘', '不調'], 1: ['↓', '絶不調'] };
 const MOOD_LABELS = { fired: '気合十分', happy: 'ごきげん', calm: '落ち着き', restless: 'そわそわ', sleepy: '眠そう' };
 const COAT_COLORS = ['#7a4a2a', '#3b2a22', '#a0612f', '#8d8d8d', '#5a3a26', '#b5793f', '#2b2b2f', '#946037'];
+const BET_LABELS = { win: '単勝', place: '複勝', quinella: '馬連', trifecta: '3連単' };
+/** 馬券の表示(例: 「単勝 3」「馬連 3-5」「3連単 1→2→3」) */
+const ticketLabel = (t) => `${BET_LABELS[t.type] ?? t.type} ${t.horses.join(t.type === 'trifecta' ? '→' : '-')}`;
 const PHASE_LABELS = { lobby: '参加受付中', betting: '賭け受付中', racing: 'レース中', result: '結果', final: '最終結果' };
 
 const $ = (id) => document.getElementById(id);
@@ -34,6 +37,7 @@ let clockOffset = 0; // サーバー時刻 − このPCの時刻
 let retryMs = 1000;
 let teacherKey = readKey();
 let waitingForState = false;
+let oddsTable = null; // 単勝以外の倍率表(賭け受付の開始時に届く)
 let sceneChangedAt = 0; // 場面が変わった直後は、主ボタンをしばらく押せなくする(二重クリック対策)
 const BUTTON_HOLD_MS = 1000;
 
@@ -62,6 +66,9 @@ function connect() {
       waitingForState = false;
       showApp();
       render();
+    } else if (m.t === 'odds') {
+      oddsTable = m;
+      if (view) render();
     } else if (m.t === 'error') {
       waitingForState = false;
       if (m.code === 'bad_key') {
@@ -227,7 +234,7 @@ const STAGES = {
       stage.append(el('p', 'hint', '1着になる馬を当てます。倍率は実力で決まります。今日の「調子」と「表情」が良い馬は、倍率より勝ちやすくなります(どちらも、たまに当てになりません)。'));
       const table = el('div', 'field');
       const head = el('div', 'row head');
-      for (const t of ['', '', '馬名', '性齢', '馬体重', '脚質', '近走', '調子', '表情', '倍率', '人気']) head.append(el('span', '', t));
+      for (const t of ['', '', '馬名', '性齢', '馬体重', '脚質', '近走', '調子', '表情', '単勝', '複勝', '人気']) head.append(el('span', '', t));
       table.append(head);
       for (const h of v.horses) {
         const row = el('div', 'row');
@@ -251,11 +258,20 @@ const STAGES = {
           condEl,
           el('span', 'mood', MOOD_LABELS[h.mood] ?? ''),
           odds,
+          el('span', 'place-odds', ''),
           el('span', 'pop', h.pop ? `${h.pop}番人気` : ''),
         );
         table.append(row);
       }
       stage.append(table);
+    },
+    update(v) {
+      // 複勝の倍率は、倍率表が届いてから入れる
+      if (!oddsTable || oddsTable.raceKey !== v.raceKey) return;
+      document.querySelectorAll('.field .row:not(.head) .place-odds').forEach((cell, i) => {
+        const o = oddsTable.place[i];
+        cell.textContent = typeof o === 'number' ? `${o.toFixed(1)}倍` : '';
+      });
     },
   },
 
@@ -300,8 +316,18 @@ const STAGES = {
       for (const b of all) {
         const li = el('li');
         const won = b.delta > 0;
+        // 買った馬券の内容(当たった馬券は太字)。古い形式で届いたときは馬番だけ。
+        const what = el('span', 'tickets');
+        if (Array.isArray(b.tickets)) {
+          b.tickets.forEach((t, i) => {
+            if (i > 0) what.append('・');
+            what.append(el('span', t.won ? 'hit' : '', ticketLabel(t)));
+          });
+        } else {
+          what.append(horseBadge(b.horse));
+        }
         li.append(
-          el('span', 'name', nameOf(b.playerId)), horseBadge(b.horse), el('span', '', `に ${fmt(b.amount)}`),
+          el('span', 'name', nameOf(b.playerId)), what, el('span', 'staked', `計 ${fmt(b.amount)}`),
           el('span', won ? 'plus' : 'minus', won ? `+${fmt(b.delta)}` : `−${fmt(-b.delta)}`),
         );
         list.append(li);

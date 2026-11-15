@@ -298,15 +298,39 @@ void main() {
       settle(async);
       transports[0].receive(stateMessage());
       settle(async);
-      client.placeBet(2, 300);
+      client.placeTicket(BetType.win, [2], 300);
       expect(transports[0].sent.last, {'t': 'bet', 'horse': 2, 'amount': 300});
       transports[0].receive({'t': 'error', 'code': 'bad_bet', 'message': 'その賭けはできません'});
       settle(async);
       expect(client.lastError, 'その賭けはできません');
       expect(client.view, isNotNull);
-      client.cancelBet();
+      client.cancelTicket('legacy');
       expect(transports[0].sent.last, {'t': 'cancelBet'});
       expect(client.lastError, isNull);
+    });
+  });
+
+  test('新しいサーバー(raceKey あり)には、種類と馬を指定して買い、id を指定して取り消す', () {
+    fakeAsync((async) {
+      late RoomClient client;
+      makeClient({'derby.id': 'id-1', 'derby.name': 'たろう'}).then((c) => client = c);
+      settle(async);
+      client.init();
+      settle(async);
+      transports[0].receive({...stateMessage(), 'phase': 'betting', 'raceNo': 1, 'raceKey': '1-abc'});
+      settle(async);
+      expect(client.oddsTable, isNull);
+      transports[0].receive({'t': 'odds', 'raceKey': '1-abc', 'place': [1.2, 1.5], 'quinella': {'1-2': 4.5}, 'trifecta': {'1-2-3': 30.5}});
+      settle(async);
+      expect(client.oddsTable!.raceKey, '1-abc');
+      expect(client.oddsTable!.place, [1.2, 1.5]);
+
+      client.placeTicket(BetType.quinella, [5, 3], 200);
+      expect(transports[0].sent.last, {'t': 'bet', 'type': 'quinella', 'horses': [5, 3], 'amount': 200});
+      client.placeTicket(BetType.win, [2], 100);
+      expect(transports[0].sent.last, {'t': 'bet', 'type': 'win', 'horses': [2], 'amount': 100});
+      client.cancelTicket('t7');
+      expect(transports[0].sent.last, {'t': 'cancelBet', 'id': 't7'});
     });
   });
 

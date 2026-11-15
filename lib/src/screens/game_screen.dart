@@ -40,7 +40,12 @@ class GameScreen extends StatelessWidget {
           Expanded(
             child: switch (view.phase) {
               Phase.lobby => LobbyView(view: view),
-              Phase.betting => BettingView(view: view, onBet: client.placeBet, onCancel: client.cancelBet),
+              Phase.betting => BettingView(
+                  view: view,
+                  odds: client.oddsTable,
+                  onBuy: client.placeTicket,
+                  onCancel: client.cancelTicket,
+                ),
               Phase.racing => RaceView(client: client),
               Phase.result => ResultView(view: view),
               Phase.finalResult => FinalView(view: view),

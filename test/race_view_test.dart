@@ -22,7 +22,7 @@ final times = [
   for (var h = 0; h < 8; h++) [for (var i = 0; i <= 10; i++) i * (1600 + h * 30) + (i.isOdd ? 120 : 0) * (i < 10 ? 1 : 0)],
 ];
 
-RoomView view(Phase phase, {int startedAt = now - 8000, Bet? bet, LastResult? lastResult, int coins = 1400}) => RoomView(
+RoomView view(Phase phase, {int startedAt = now - 8000, Ticket? bet, Results? results, int coins = 1400}) => RoomView(
       phase: phase,
       raceNo: 2,
       totalRaces: 5,
@@ -36,11 +36,43 @@ RoomView view(Phase phase, {int startedAt = now - 8000, Bet? bet, LastResult? la
         const PlayerInfo(id: 'b', name: 'はなこ', coins: 900, rank: 2, online: false),
       ],
       bets: const [],
-      me: Me(id: 'a', name: 'たろうたろうたろうたろう', coins: coins, rank: 1, bet: bet, lastResult: lastResult),
+      me: Me(id: 'a', name: 'たろうたろうたろうたろう', coins: coins, rank: 1, tickets: [?bet], results: results),
       race: phase == Phase.racing || phase == Phase.result
           ? RaceInfo(startedAt: startedAt, durationMs: 20000, order: const [1, 2, 3, 4, 5, 6, 7, 8], times: times)
           : null,
     );
+
+/// 3連単を含む 10 点を持っている場面
+RoomView manyTickets(Phase phase) {
+  final base = view(phase);
+  final tickets = [
+    for (var h = 1; h <= 8; h++) Ticket(id: 't$h', type: BetType.trifecta, horses: [h, h % 8 + 1, (h + 1) % 8 + 1], amount: 100, odds: 999.9),
+    const Ticket(id: 'q', type: BetType.quinella, horses: [1, 2], amount: 100, odds: 12.5),
+    const Ticket(id: 'p', type: BetType.place, horses: [1], amount: 100, odds: 1.4),
+  ];
+  return RoomView(
+    phase: phase, raceNo: 2, totalRaces: 5, serverNow: now, betCount: 1, onlineCount: 2,
+    horses: base.horses, course: base.course, players: base.players, race: base.race,
+    bets: phase == Phase.result
+        ? [
+            PublicBet(playerId: 'a', horse: 1, amount: 1000, delta: 98890, tickets: [
+              for (final t in tickets)
+                TicketResult(type: t.type, horses: t.horses, amount: t.amount, odds: t.odds, won: t.id == 't1', payout: t.id == 't1' ? 99990 : 0),
+            ]),
+          ]
+        : const [],
+    me: Me(
+      id: 'a', name: 'たろうたろうたろうたろう', coins: 99890, rank: 1,
+      tickets: tickets,
+      results: phase == Phase.result
+          ? Results(staked: 1000, delta: 98990, tickets: [
+              for (final t in tickets)
+                TicketResult(type: t.type, horses: t.horses, amount: t.amount, odds: t.odds, won: t.id == 't1', payout: t.id == 't1' ? 99990 : 0),
+            ])
+          : null,
+    ),
+  );
+}
 
 void main() {
   late RoomClient client;
@@ -64,14 +96,14 @@ void main() {
   }
 
   testWidgets('途中から開いても、経過時間に合った位置を描く', (tester) async {
-    await pumpRace(tester, view(Phase.racing, bet: const Bet(horse: 3, amount: 300)));
+    await pumpRace(tester, view(Phase.racing, bet: const Ticket(id: 't', type: BetType.win, horses: [3], amount: 300, odds: 2.0)));
     final track = tester.widget<RaceTrack>(find.byType(RaceTrack));
     expect(track.progress.length, 8);
     for (var i = 0; i < 8; i++) {
       expect(track.progress[i], closeTo(horseProgress(times[i], 8000), 0.02), reason: '馬番 ${i + 1}');
     }
     expect(track.progress[0], greaterThan(track.progress[7]));
-    expect(track.myHorse, 3);
+    expect(track.myHorses, {3});
     expect(track.distance, 2400);
     expect(find.textContaining('残り'), findsOneWidget);
     expect(find.text('結果を待っています…'), findsNothing);
@@ -82,7 +114,7 @@ void main() {
     await pumpRace(tester, view(Phase.racing, startedAt: now - 30000));
     final track = tester.widget<RaceTrack>(find.byType(RaceTrack));
     expect(track.progress, everyElement(1.0));
-    expect(track.myHorse, isNull);
+    expect(track.myHorses, isEmpty);
     expect(find.text('結果を待っています…'), findsOneWidget);
     expect(find.text('見送り'), findsOneWidget);
   });
@@ -110,12 +142,14 @@ void main() {
   for (final (label, v) in [
     ('受付', view(Phase.lobby)),
     ('賭け受付', view(Phase.betting)),
-    ('賭け済み', view(Phase.betting, bet: const Bet(horse: 8, amount: 1400))),
-    ('レース中', view(Phase.racing, bet: const Bet(horse: 3, amount: 300))),
-    ('結果・的中', view(Phase.result, bet: const Bet(horse: 1, amount: 300), lastResult: const LastResult(horse: 1, amount: 300, won: true, delta: 1230), coins: 1234567)),
-    ('結果・はずれ', view(Phase.result, lastResult: const LastResult(horse: 2, amount: 300, won: false, delta: -300))),
+    ('賭け済み', view(Phase.betting, bet: const Ticket(id: 't', type: BetType.win, horses: [8], amount: 1400, odds: 2.0))),
+    ('レース中', view(Phase.racing, bet: const Ticket(id: 't', type: BetType.win, horses: [3], amount: 300, odds: 2.0))),
+    ('結果・的中', view(Phase.result, bet: const Ticket(id: 't', type: BetType.win, horses: [1], amount: 300, odds: 2.0), results: const Results(staked: 300, delta: 1230, tickets: [TicketResult(type: BetType.win, horses: [1], amount: 300, odds: 5.1, won: true, payout: 1530)]), coins: 1234567)),
+    ('結果・はずれ', view(Phase.result, results: const Results(staked: 300, delta: -300, tickets: [TicketResult(type: BetType.win, horses: [2], amount: 300, odds: 5.1, won: false, payout: 0)]))),
     ('結果・見送り', view(Phase.result)),
     ('最終結果', view(Phase.finalResult, coins: 1234567)),
+    ('レース中・馬券 10 点', manyTickets(Phase.racing)),
+    ('結果・馬券 10 点', manyTickets(Phase.result)),
   ]) {
     testWidgets('画面全体: $label がはみ出さずに描ける', (tester) async {
       phone(tester);
@@ -137,13 +171,32 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('レース中: 複数の馬券を持っていると、点数と合計が出て、関係する馬がすべて強調される', (tester) async {
+    await pumpRace(tester, manyTickets(Phase.racing));
+    final track = tester.widget<RaceTrack>(find.byType(RaceTrack));
+    expect(track.myHorses, {1, 2, 3, 4, 5, 6, 7, 8});
+    expect(find.textContaining('10点'), findsOneWidget);
+    expect(find.textContaining('計 1,000'), findsOneWidget);
+  });
+
+  testWidgets('結果: 馬券ごとの当たり外れと払い戻しが出る', (tester) async {
+    phone(tester);
+    client.debugSetView(manyTickets(Phase.result));
+    await tester.pumpWidget(DerbyApp(client: client));
+    await tester.pump();
+    expect(find.text('的中! +98,990'), findsOneWidget);
+    expect(find.textContaining('3連単 1→2→3'), findsWidgets);
+    expect(find.textContaining('+99,990'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('結果画面の文言', (tester) async {
     phone(tester);
-    client.debugSetView(view(Phase.result, bet: const Bet(horse: 1, amount: 300), lastResult: const LastResult(horse: 1, amount: 300, won: true, delta: 1230)));
+    client.debugSetView(view(Phase.result, bet: const Ticket(id: 't', type: BetType.win, horses: [1], amount: 300, odds: 2.0), results: const Results(staked: 300, delta: 1230, tickets: [TicketResult(type: BetType.win, horses: [1], amount: 300, odds: 5.1, won: true, payout: 1530)])));
     await tester.pumpWidget(DerbyApp(client: client));
     await tester.pump();
     expect(find.text('的中! +1,230'), findsOneWidget);
-    client.debugSetView(view(Phase.result, lastResult: const LastResult(horse: 2, amount: 300, won: false, delta: -300)));
+    client.debugSetView(view(Phase.result, results: const Results(staked: 300, delta: -300, tickets: [TicketResult(type: BetType.win, horses: [2], amount: 300, odds: 5.1, won: false, payout: 0)])));
     await tester.pump();
     expect(find.text('はずれ −300'), findsOneWidget);
     client.debugSetView(view(Phase.result));

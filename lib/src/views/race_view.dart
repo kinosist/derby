@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../format.dart';
+import '../protocol.dart';
 import '../race_math.dart';
 import '../room_client.dart';
 import '../widgets/horse_colors.dart';
@@ -50,15 +51,16 @@ class _RaceViewState extends State<RaceView> with SingleTickerProviderStateMixin
     final distance = view.course?.distance ?? 1600;
     final lead = progress.fold(0.0, math.max);
     final remain = ((distance * (1 - lead)) / 10).round() * 10;
-    final bet = view.me?.bet;
-    final betHorse = bet == null ? null : view.horses.where((h) => h.no == bet.horse).firstOrNull;
+    final tickets = view.me?.tickets ?? const <Ticket>[];
+    final myHorses = {for (final t in tickets) ...t.horses};
+    final staked = tickets.fold(0, (a, t) => a + t.amount);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
       child: Column(
         children: [
           Expanded(
-            child: RaceTrack(progress: progress, myHorse: bet?.horse, animMs: elapsed, distance: distance),
+            child: RaceTrack(progress: progress, myHorses: myHorses, animMs: elapsed, distance: distance),
           ),
           const SizedBox(height: 10),
           Row(
@@ -72,18 +74,18 @@ class _RaceViewState extends State<RaceView> with SingleTickerProviderStateMixin
           const SizedBox(height: 8),
           Row(
             children: [
-              if (bet != null) ...[
-                HorseBadge(bet.horse, size: 28),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '${betHorse?.name ?? ''} に ${formatCoins(bet.amount)}',
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                  ),
+              Expanded(
+                child: Text(
+                  switch (tickets.length) {
+                    0 => '見送り',
+                    1 => '${ticketLabel(tickets[0].type, tickets[0].horses)} に ${formatCoins(staked)}',
+                    _ => '${tickets.length}点 計 ${formatCoins(staked)}(${tickets.map((t) => ticketLabel(t.type, t.horses)).join('、')})',
+                  },
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: tickets.isEmpty ? null : FontWeight.w700),
                 ),
-              ] else
-                Expanded(child: Text('見送り', style: theme.textTheme.titleMedium)),
+              ),
               if (lead < 1.0) ...[
                 const SizedBox(width: 8),
                 Text('残り ${remain}m', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
