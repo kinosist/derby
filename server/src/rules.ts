@@ -250,3 +250,79 @@ function splitTimes(finish: number, shape: number, rng: Rng): number[] {
   out.push(finish);
   return out;
 }
+
+// ---- 馬券の種類と倍率 ----
+
+export const BET_TYPES = ['win', 'place', 'quinella', 'trifecta'] as const;
+export type BetType = (typeof BET_TYPES)[number];
+
+/** 馬券の種類ごとに選ぶ頭数 */
+export const BET_HORSES: Record<BetType, number> = { win: 1, place: 1, quinella: 2, trifecta: 3 };
+
+export const MAX_ODDS = 999.9;
+export const MAX_TICKETS = 10;
+
+/** 単勝以外の倍率表。単勝は Horse.odds。 */
+export type OddsTable = {
+  /** place[馬番-1] */
+  place: number[];
+  /** キーは "小さい馬番-大きい馬番" */
+  quinella: Record<string, number>;
+  /** キーは "1着-2着-3着" */
+  trifecta: Record<string, number>;
+};
+
+function oddsForCombo(prob: number): number {
+  return Math.min(MAX_ODDS, oddsFor(prob));
+}
+
+/** 倍率表を引くためのキー。馬連は順不同なので馬番の小さい順に並べる。 */
+export function comboKey(type: BetType, horses: number[]): string {
+  return (type === 'quinella' ? [...horses].sort((a, b) => a - b) : horses).join('-');
+}
+
+/**
+ * 複勝・馬連・3連単の倍率表を作る。
+ * 着順は「残った馬の中で、実力(調子を含まない勝率)に比例して決まる」と仮定して的中確率を求める。
+ */
+export function makeOddsTable(horses: Horse[]): OddsTable {
+  const n = horses.length;
+  // 以前の形式で保存された馬には baseProb が無いので、その場合は prob を使う
+  const p = horses.map((h) => h.baseProb ?? h.prob);
+  const placeProb = new Array(n).fill(0);
+  const quinellaProb: Record<string, number> = {};
+  const trifecta: Record<string, number> = {};
+  for (let a = 0; a < n; a++) {
+    for (let b = 0; b < n; b++) {
+      if (b === a) continue;
+      const pab = p[a] * (p[b] / (1 - p[a]));
+      const qk = comboKey('quinella', [horses[a].no, horses[b].no]);
+      quinellaProb[qk] = (quinellaProb[qk] ?? 0) + pab;
+      for (let c = 0; c < n; c++) {
+        if (c === a || c === b) continue;
+        const pabc = pab * (p[c] / (1 - p[a] - p[b]));
+        trifecta[comboKey('trifecta', [horses[a].no, horses[b].no, horses[c].no])] = oddsForCombo(pabc);
+        placeProb[a] += pabc;
+        placeProb[b] += pabc;
+        placeProb[c] += pabc;
+      }
+    }
+  }
+  const quinella: Record<string, number> = {};
+  for (const [k, v] of Object.entries(quinellaProb)) quinella[k] = oddsForCombo(v);
+  return { place: placeProb.map(oddsForCombo), quinella, trifecta };
+}
+
+/** 馬券が当たったか。order は着順(馬番の並び)。 */
+export function ticketWins(type: BetType, horses: number[], order: number[]): boolean {
+  switch (type) {
+    case 'win':
+      return order[0] === horses[0];
+    case 'place':
+      return order.slice(0, 3).includes(horses[0]);
+    case 'quinella':
+      return horses.length === 2 && horses.includes(order[0]) && horses.includes(order[1]);
+    case 'trifecta':
+      return horses.length === 3 && horses.every((h, i) => order[i] === h);
+  }
+}

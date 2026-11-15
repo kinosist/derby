@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import {
-  COND_FACTORS, MOODS, STYLES, drawOrder, makeCourse, makeField, makeTimes, oddsFor, payout, raceDuration, seededRng,
+  COND_FACTORS, MOODS, STYLES, comboKey, drawOrder, makeOddsTable, ticketWins, makeCourse, makeField, makeTimes, oddsFor, payout, raceDuration, seededRng,
   type Course,
 } from '../src/rules';
 
@@ -203,4 +203,87 @@ test('makeTimes: 逃げ馬は序盤に前へ出て、追込馬は終盤に伸び
   expect(nOikomi).toBeGreaterThan(50);
   expect(nige / nNige).toBeLessThan(0.485);
   expect(oikomi / nOikomi).toBeGreaterThan(0.515);
+});
+
+test('makeOddsTable: 複勝・馬連・3連単の倍率は、実力から計算した的中確率の逆数', () => {
+  const f = makeField(seededRng(11));
+  const p = f.map((h) => h.baseProb);
+  const t = makeOddsTable(f);
+  expect(t.place.length).toBe(8);
+  expect(Object.keys(t.quinella).length).toBe(28);
+  expect(Object.keys(t.trifecta).length).toBe(336);
+  const round = (x: number) => Math.max(1.1, Math.min(999.9, Math.round((1 / x) * 10) / 10));
+  // 3連単 1→2→3
+  const tri = p[0] * (p[1] / (1 - p[0])) * (p[2] / (1 - p[0] - p[1]));
+  expect(t.trifecta['1-2-3']).toBe(round(tri));
+  // 馬連 1-2(順不同)
+  const quin = p[0] * (p[1] / (1 - p[0])) + p[1] * (p[0] / (1 - p[1]));
+  expect(t.quinella['1-2']).toBe(round(quin));
+  expect(t.quinella['2-1']).toBeUndefined();
+  // 複勝: 3着以内に入る確率を総当たりで求める
+  let place = 0;
+  for (let a = 0; a < 8; a++) for (let b = 0; b < 8; b++) for (let c = 0; c < 8; c++) {
+    if (a === b || b === c || a === c) continue;
+    if (a !== 0 && b !== 0 && c !== 0) continue;
+    place += p[a] * (p[b] / (1 - p[a])) * (p[c] / (1 - p[a] - p[b]));
+  }
+  expect(t.place[0]).toBe(round(place));
+  // 全部 1.1〜999.9 に収まる
+  for (const v of [...t.place, ...Object.values(t.quinella), ...Object.values(t.trifecta)]) {
+    expect(v).toBeGreaterThanOrEqual(1.1);
+    expect(v).toBeLessThanOrEqual(999.9);
+  }
+  // 複勝は単勝より当たりやすいので、倍率は単勝以下
+  f.forEach((h, i) => expect(t.place[i]).toBeLessThanOrEqual(h.odds));
+});
+
+test('makeOddsTable: 的中確率の合計が正しい(複勝 3、馬連 1、3連単 1)', () => {
+  // 上限・下限の丸めに掛からない、実力の近い 8 頭で確かめる
+  const f = makeField(seededRng(11)).map((h) => ({ ...h, baseProb: 1 / 8 }));
+  const t = makeOddsTable(f);
+  expect(t.place.reduce((a, o) => a + 1 / o, 0)).toBeCloseTo(3, 1);
+  expect(Object.values(t.quinella).reduce((a, o) => a + 1 / o, 0)).toBeCloseTo(1, 1);
+  expect(Object.values(t.trifecta).reduce((a, o) => a + 1 / o, 0)).toBeCloseTo(1, 1);
+});
+
+test('comboKey と ticketWins', () => {
+  expect(comboKey('quinella', [5, 2])).toBe('2-5');
+  expect(comboKey('trifecta', [5, 2, 7])).toBe('5-2-7');
+  const order = [3, 1, 4, 2, 5, 6, 7, 8];
+  expect(ticketWins('win', [3], order)).toBe(true);
+  expect(ticketWins('win', [1], order)).toBe(false);
+  expect(ticketWins('place', [4], order)).toBe(true);
+  expect(ticketWins('place', [2], order)).toBe(false);
+  expect(ticketWins('quinella', [1, 3], order)).toBe(true);
+  expect(ticketWins('quinella', [3, 1], order)).toBe(true);
+  expect(ticketWins('quinella', [3, 4], order)).toBe(false);
+  expect(ticketWins('trifecta', [3, 1, 4], order)).toBe(true);
+  expect(ticketWins('trifecta', [1, 3, 4], order)).toBe(false);
+});
+
+test('倍率どおりに賭け続けても、調子を見なければ得も損もしない(各馬券の回収率が約 1)', () => {
+  const rng = seededRng(4242);
+  const sum = { place: [0, 0], quinella: [0, 0], trifecta: [0, 0] };
+  for (let i = 0; i < 30000; i++) {
+    // 調子の影響を除いて確かめる(全馬の調子を普通にする)
+    const f = makeField(rng).map((h) => ({ ...h, prob: h.baseProb }));
+    const t = makeOddsTable(f);
+    const order = drawOrder(f, rng);
+    const a = 1 + Math.floor(rng() * 8);
+    let b = 1 + Math.floor(rng() * 8);
+    while (b === a) b = 1 + Math.floor(rng() * 8);
+    let c = 1 + Math.floor(rng() * 8);
+    while (c === a || c === b) c = 1 + Math.floor(rng() * 8);
+    sum.place[0]++; if (ticketWins('place', [a], order)) sum.place[1] += t.place[a - 1];
+    sum.quinella[0]++; if (ticketWins('quinella', [a, b], order)) sum.quinella[1] += t.quinella[comboKey('quinella', [a, b])];
+    // 3連単は上限 999.9 倍に掛からない組み合わせだけで確かめる
+    const tk = comboKey('trifecta', [a, b, c]);
+    if (t.trifecta[tk] < 999.9) { sum.trifecta[0]++; if (ticketWins('trifecta', [a, b, c], order)) sum.trifecta[1] += t.trifecta[tk]; }
+  }
+  expect(sum.place[1] / sum.place[0]).toBeGreaterThan(0.93);
+  expect(sum.place[1] / sum.place[0]).toBeLessThan(1.07);
+  expect(sum.quinella[1] / sum.quinella[0]).toBeGreaterThan(0.85);
+  expect(sum.quinella[1] / sum.quinella[0]).toBeLessThan(1.15);
+  expect(sum.trifecta[1] / sum.trifecta[0]).toBeGreaterThan(0.7);
+  expect(sum.trifecta[1] / sum.trifecta[0]).toBeLessThan(1.3);
 });

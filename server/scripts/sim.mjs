@@ -48,7 +48,8 @@ class Client {
         if (m.t === 'state') {
           this.state = m;
           this.onState?.(m);
-        } else if (m.t === 'error') this.errors.push(m.code);
+        } else if (m.t === 'odds') this.odds = m;
+        else if (m.t === 'error') this.errors.push(m.code);
         this.notify();
       });
     });
@@ -106,6 +107,41 @@ function randomBet(state) {
   return { horse: 1 + Math.floor(Math.random() * 8), amount: 10 * (1 + Math.floor(Math.random() * Math.floor(max / 10))) };
 }
 
+const TYPES = { win: 1, place: 1, quinella: 2, trifecta: 3 };
+const pickHorses = (n) => [1, 2, 3, 4, 5, 6, 7, 8].sort(() => Math.random() - 0.5).slice(0, n);
+const comboKey = (type, horses) => (type === 'quinella' ? [...horses].sort((a, b) => a - b) : horses).join('-');
+
+/** 1〜4 点の馬券をランダムに選ぶ(合計は所持金と 400 コインの小さい方まで)。1 割は見送り。 */
+function randomTickets(state) {
+  let budget = Math.min(state.me.coins, 400);
+  if (budget < 10 || Math.random() < 0.1) return [];
+  const tickets = [];
+  const count = 1 + Math.floor(Math.random() * 4);
+  for (let i = 0; i < count && budget >= 10; i++) {
+    const type = Object.keys(TYPES)[Math.floor(Math.random() * 4)];
+    const horses = pickHorses(TYPES[type]);
+    if (tickets.some((t) => t.type === type && comboKey(type, t.horses) === comboKey(type, horses))) continue;
+    const amount = 10 * (1 + Math.floor(Math.random() * Math.min(10, Math.floor(budget / 10))));
+    budget -= amount;
+    tickets.push({ type, horses, amount });
+  }
+  return tickets;
+}
+
+/** 倍率表から馬券の倍率を引く(端末側の計算) */
+function oddsOf(client, t) {
+  if (t.type === 'win') return client.state.horses.find((h) => h.no === t.horses[0]).odds;
+  if (t.type === 'place') return client.odds.place[t.horses[0] - 1];
+  return client.odds[t.type][comboKey(t.type, t.horses)];
+}
+
+function wins(t, order) {
+  if (t.type === 'win') return order[0] === t.horses[0];
+  if (t.type === 'place') return order.slice(0, 3).includes(t.horses[0]);
+  if (t.type === 'quinella') return t.horses.includes(order[0]) && t.horses.includes(order[1]);
+  return t.horses.every((h, i) => order[i] === h);
+}
+
 // ---- 生徒役だけのモード ----
 async function runPlayersOnly() {
   const players = [];
@@ -116,8 +152,8 @@ async function runPlayersOnly() {
     const act = (s) => {
       if (s.phase === 'betting' && s.me && !s.me.bet && betFor !== s.raceNo) {
         betFor = s.raceNo;
-        const b = randomBet(s);
-        if (b) setTimeout(() => p.ws.readyState === 1 && p.send({ t: 'bet', ...b }), 500 + Math.random() * 6000);
+        randomTickets(s).forEach((t, i) =>
+          setTimeout(() => p.ws.readyState === 1 && p.send({ t: 'bet', ...t }), 500 + Math.random() * 5000 + i * 300));
       }
     };
     p.onState = act;
@@ -195,6 +231,8 @@ async function runFull() {
       check(p.state.horses.every((h) => !('prob' in h) && !('baseProb' in h) && !('trueCond' in h)), '勝率と本当の調子は送られない');
       check(p.state.horses.every((h) => h.cond >= 1 && h.cond <= 5 && typeof h.mood === 'string' && h.recent.length === 3), '出走表の項目がそろっている');
       check(p.state.course && p.state.course.distance >= 1200, '距離と馬場が届く');
+      await p.wait((c) => c.odds?.raceKey === c.state.raceKey, '倍率表が届く');
+      check(p.odds.place.length === 8 && Object.keys(p.odds.quinella).length === 28 && Object.keys(p.odds.trifecta).length === 336, '倍率表の大きさ');
     }
 
     if (race === 1) {
@@ -205,6 +243,22 @@ async function runFull() {
       await players[3].expectError('bad_bet', '10 の倍数でない');
       players[3].send({ t: 'bet', horse: 1, amount: 999990 });
       await players[3].expectError('bad_bet', '所持金を超える');
+      players[3].send({ t: 'bet', type: 'exacta', horses: [1, 2], amount: 10 });
+      await players[3].expectError('bad_bet', '存在しない種類の馬券');
+      players[3].send({ t: 'bet', type: 'trifecta', horses: [1, 1, 2], amount: 10 });
+      await players[3].expectError('bad_bet', '同じ馬を 2 回選んだ 3連単');
+      players[3].send({ t: 'bet', type: 'quinella', horses: [1], amount: 10 });
+      await players[3].expectError('bad_bet', '頭数の足りない馬連');
+      players[3].send({ t: 'cancelBet', id: 'nope' });
+      await players[3].expectError('bad_bet', '存在しない馬券の取り消し');
+      // 買ってから 1 点だけ取り消す
+      players[3].send({ t: 'bet', type: 'place', horses: [1], amount: 10 });
+      players[3].send({ t: 'bet', type: 'win', horses: [2], amount: 10 });
+      await players[3].wait((c) => c.state.me.tickets.length === 2, '2 点買う');
+      players[3].send({ t: 'cancelBet', id: players[3].state.me.tickets[0].id });
+      await players[3].wait((c) => c.state.me.tickets.length === 1 && c.state.me.tickets[0].type === 'win', '1 点だけ取り消す');
+      players[3].send({ t: 'cancelBet' });
+      await players[3].wait((c) => c.state.me.tickets.length === 0, '全部取り消す');
     }
 
     if (race === 2) {
@@ -223,15 +277,35 @@ async function runFull() {
       players[1] = fresh;
     }
 
-    // 賭ける
-    const plans = players.map((p) => ({ p, before: p.state.me.coins, bet: randomBet(p.state) }));
-    for (const { p, bet } of plans) if (bet) p.send({ t: 'bet', ...bet });
-    await Promise.all(plans.map(({ p, bet }) =>
-      bet ? p.wait((c) => c.state.me.bet?.horse === bet.horse && c.state.me.bet?.amount === bet.amount, '賭けの反映') : null));
-    const betCount = plans.filter((x) => x.bet).length;
+    // 賭ける。players[6] は古いアプリの形式(単勝 1 点)で送る。
+    const plans = players.map((p, i) => {
+      const before = p.state.me.coins;
+      if (i === 6) {
+        const b = randomBet(p.state);
+        return { p, before, legacy: true, tickets: b ? [{ type: 'win', horses: [b.horse], amount: b.amount }] : [] };
+      }
+      return { p, before, legacy: false, tickets: randomTickets(p.state) };
+    });
+    for (const plan of plans) {
+      plan.total = plan.tickets.reduce((a, t) => a + t.amount, 0);
+      for (const t of plan.tickets) {
+        t.odds = oddsOf(plan.p, t);
+        plan.p.send(plan.legacy ? { t: 'bet', horse: t.horses[0], amount: t.amount } : { t: 'bet', ...t });
+      }
+    }
+    await Promise.all(plans.map(({ p, tickets }) => p.wait((c) => c.state.me.tickets.length === tickets.length, '馬券の反映')));
+    for (const { p, tickets, legacy } of plans) {
+      tickets.forEach((t) => {
+        const got = p.state.me.tickets.find((x) => x.type === t.type && comboKey(t.type, x.horses) === comboKey(t.type, t.horses));
+        check(got && got.amount === t.amount && got.odds === t.odds, `${p.label}: 馬券 ${t.type} ${t.horses} の金額と倍率が一致`);
+      });
+      if (legacy && tickets.length) check(p.state.me.bet.horse === tickets[0].horses[0] && p.state.me.bet.amount === tickets[0].amount, '古い形式の bet も届く');
+    }
+    const betCount = plans.filter((x) => x.tickets.length > 0).length;
     await admin.wait((c) => c.state.betCount === betCount, `賭け済み ${betCount} 人`);
     check(admin.state.players.filter((x) => x.hasBet).length === betCount, '先生には賭け済みの印が見える');
     check(players[0].state.players.every((x) => x.hasBet === false), '生徒には他人の賭け済みが見えない');
+    check(!JSON.stringify(players[0].state.players).includes('tickets'), '受付中は他人の馬券が見えない');
 
     // 締め切り(連打: Review Focus 1)
     const t0 = Date.now();
@@ -240,8 +314,8 @@ async function runFull() {
     await admin.expectError('not_allowed', '締め切りの連打');
     await Promise.all(players.map((p) => p.waitPhase('racing', race)));
     const startedAt = players[0].state.race.startedAt;
-    for (const { p, before, bet } of plans) {
-      check(p.state.me.coins === before - (bet?.amount ?? 0), '締め切りで賭け金が引かれる');
+    for (const { p, before, total } of plans) {
+      check(p.state.me.coins === before - total, '締め切りで賭け金の合計が引かれる');
       check(p.state.race.startedAt === startedAt && p.state.race.times.length === 8, 'レース映像データが同じ');
     }
     players[4].send({ t: 'bet', horse: 1, amount: 10 });
@@ -256,7 +330,8 @@ async function runFull() {
       check(back.state.phase === 'racing' && back.state.race.startedAt === startedAt, '復帰後も同じレース');
       const elapsed = back.state.serverNow - back.state.race.startedAt;
       check(elapsed >= 7000 && elapsed <= 10000, `復帰時の経過時間が 7〜10 秒(実際: ${elapsed}ms)`);
-      check(back.state.me.coins === plans[0].before - (plans[0].bet?.amount ?? 0), '復帰後も所持金が同じ');
+      check(back.state.me.coins === plans[0].before - plans[0].total, '復帰後も所持金が同じ');
+      check(back.state.me.tickets.length === plans[0].tickets.length, '復帰後も馬券が残っている');
       players[0] = back;
       plans[0].p = back;
     }
@@ -272,19 +347,31 @@ async function runFull() {
     const odds = s0.horses.find((h) => h.no === winner).odds;
     const finish = s0.race.times.map((t) => t[10]);
     check([...s0.race.order].sort((a, b) => finish[a - 1] - finish[b - 1]).join() === s0.race.order.join(), '映像のゴール順が着順と一致');
-    for (const { p, before, bet } of plans) {
+    let hits = 0;
+    for (const { p, before, tickets, total, legacy } of plans) {
       const me = p.state.me;
-      if (!bet) {
-        check(me.coins === before && me.lastResult === null, '見送りは所持金不変');
+      if (tickets.length === 0) {
+        check(me.coins === before && me.results === null && me.lastResult === null, '見送りは所持金不変');
         continue;
       }
-      const won = bet.horse === winner;
-      const expected = before - bet.amount + (won ? expectedPayout(bet.amount, odds) : 0);
-      check(me.coins === expected, `${p.label}: 所持金 ${me.coins} が計算 ${expected} と一致`);
-      check(me.lastResult.won === won && me.lastResult.delta === expected - before, '結果の増減が一致');
+      // 馬券ごとに、端末側で計算した払い戻しと一致するか
+      let back = 0;
+      for (const t of tickets) {
+        const won = wins(t, s0.race.order);
+        const pay = won ? expectedPayout(t.amount, t.odds) : 0;
+        back += pay;
+        if (won) hits++;
+        const got = me.results.tickets.find((x) => x.type === t.type && comboKey(t.type, x.horses) === comboKey(t.type, t.horses));
+        check(got && got.won === won && got.payout === pay, `${p.label}: ${t.type} ${t.horses} の当たり外れと払い戻し`);
+      }
+      check(me.coins === before - total + back, `${p.label}: 所持金 ${me.coins} が計算 ${before - total + back} と一致`);
+      check(me.results.staked === total && me.results.delta === back - total, '結果の合計が一致');
+      check(me.lastResult.delta === back - total && me.lastResult.amount === total, '古い形式の結果も一致');
+      if (legacy) check(me.lastResult.horse === tickets[0].horses[0], '古い形式の結果の馬番');
     }
+    check(s0.bets.every((b) => Array.isArray(b.tickets) && b.tickets.length > 0), '結果画面で全員の馬券の内容が公開される');
     check(s0.bets.length === betCount, '結果画面で全員の賭けが公開される');
-    console.log(`第${race}レース: 1着 ${winner}番(${odds}倍)、${betCount} 人が賭け、${took}ms`);
+    console.log(`第${race}レース: 1着 ${winner}番(${odds}倍)、${betCount} 人が賭け、的中 ${hits} 点、${took}ms`);
 
     // 次へ(連打: Review Focus 1)
     // 「次のレースへ」の二重クリック: 2回目は結果画面を見て押されたもの。

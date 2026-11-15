@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'vitest';
 import {
   adminCloseAndRace, adminNewGame, adminNext, adminReset, adminStart, cancelBet, finishRace,
-  join, kick, kickAll, newGame, normalizeName, placeBet, sameScene, setOnline, viewFor,
+  cancelTicket, join, kick, kickAll, migrate, newGame, normalizeName, oddsMessage, placeBet, placeTicket,
+  sameScene, setOnline, viewFor,
   type GameState,
 } from '../src/game';
-import { payout, seededRng, START_COINS, TOTAL_RACES } from '../src/rules';
+import { comboKey, makeOddsTable, payout, seededRng, START_COINS, TOTAL_RACES } from '../src/rules';
 
 let idCounter = 0;
 const newId = () => `gen-${++idCounter}`;
@@ -81,11 +82,12 @@ describe('試合の流れ', () => {
     s = finishRace(s);
     const p = (n: string) => s.players.find((x) => x.name === n)!;
     expect(p('win').coins).toBe(1000 - 300 + payout(300, odds));
-    expect(p('win').lastResult).toEqual({ horse: 1, amount: 300, won: true, delta: payout(300, odds) - 300 });
+    expect(p('win').results).toMatchObject({ staked: 300, delta: payout(300, odds) - 300 });
+    expect(p('win').results!.tickets).toMatchObject([{ type: 'win', horses: [1], amount: 300, odds, won: true, payout: payout(300, odds) }]);
     expect(p('lose').coins).toBe(800);
-    expect(p('lose').lastResult).toEqual({ horse: 2, amount: 200, won: false, delta: -200 });
+    expect(p('lose').results).toMatchObject({ staked: 200, delta: -200, tickets: [{ won: false, payout: 0 }] });
     expect(p('skip').coins).toBe(1000);
-    expect(p('skip').lastResult).toBeNull();
+    expect(p('skip').results).toBeNull();
   });
 
   test('締め切りで賭け金が引かれる', () => {
@@ -104,7 +106,7 @@ describe('試合の流れ', () => {
     expect(coins(s, 'late')).toBe(START_COINS);
     s = ok(adminNext(s, seededRng(3)));
     s = ok(placeBet(s, idOf('late'), 1, 100));
-    expect(s.players.find((p) => p.name === 'late')!.bet).toEqual({ horse: 1, amount: 100 });
+    expect(s.players.find((p) => p.name === 'late')!.tickets).toMatchObject([{ type: 'win', horses: [1], amount: 100 }]);
   });
 });
 
@@ -146,9 +148,10 @@ describe('賭けの検証', () => {
     let s = ok(adminStart(setup(['a']), seededRng(1)));
     s = ok(placeBet(s, idOf('a'), 1, 100));
     s = ok(placeBet(s, idOf('a'), 4, 500));
-    expect(s.players[0].bet).toEqual({ horse: 4, amount: 500 });
+    expect(s.players[0].tickets).toMatchObject([{ type: 'win', horses: [4], amount: 500 }]);
+    expect(s.players[0].tickets.length).toBe(1);
     s = ok(cancelBet(s, idOf('a')));
-    expect(s.players[0].bet).toBeNull();
+    expect(s.players[0].tickets).toEqual([]);
   });
 });
 
@@ -383,7 +386,7 @@ describe('退出・リセット', () => {
     expect(r.phase).toBe('lobby');
     expect(r.race).toBeNull();
     expect(r.horses).toEqual([]);
-    expect(r.players.map((p) => [p.coins, p.bet, p.lastResult])).toEqual([[1000, null, null], [1000, null, null]]);
+    expect(r.players.map((p) => [p.coins, p.tickets, p.results])).toEqual([[1000, [], null], [1000, [], null]]);
   });
 
   test('adminNewGame は final から lobby に戻す', () => {
@@ -453,5 +456,226 @@ describe('以前の形式で保存された状態', () => {
     const v = viewFor(old as unknown as GameState, idOf('a'), false, 0);
     expect(v.course).toBeNull();
     expect(v.phase).toBe('lobby');
+  });
+});
+
+describe('馬券の種類と複数購入', () => {
+  let n = 0;
+  const tid = () => `t${++n}`;
+  const betting = (names = ['a']) => ok(adminStart(setup(names), seededRng(1)));
+  const me = (s: GameState) => s.players[0];
+
+  test('4 種類の馬券を買える。倍率は倍率表のものが記録される', () => {
+    let s = betting();
+    const table = makeOddsTable(s.horses);
+    s = ok(placeTicket(s, idOf('a'), 'win', [1], 100, tid));
+    s = ok(placeTicket(s, idOf('a'), 'place', [2], 100, tid));
+    s = ok(placeTicket(s, idOf('a'), 'quinella', [5, 3], 100, tid));
+    s = ok(placeTicket(s, idOf('a'), 'trifecta', [4, 1, 2], 100, tid));
+    expect(me(s).tickets.map((t) => [t.type, t.horses, t.amount, t.odds])).toEqual([
+      ['win', [1], 100, s.horses[0].odds],
+      ['place', [2], 100, table.place[1]],
+      ['quinella', [3, 5], 100, table.quinella['3-5']], // 馬連は馬番の小さい順にそろえる
+      ['trifecta', [4, 1, 2], 100, table.trifecta['4-1-2']],
+    ]);
+    expect(new Set(me(s).tickets.map((t) => t.id)).size).toBe(4);
+    expect(me(s).coins).toBe(1000); // 引かれるのは締め切り時
+  });
+
+  test('同じ種類・同じ馬の馬券は金額を置き換える(馬連は順不同で同じ)', () => {
+    let s = betting();
+    s = ok(placeTicket(s, idOf('a'), 'quinella', [5, 3], 100, tid));
+    const id = me(s).tickets[0].id;
+    s = ok(placeTicket(s, idOf('a'), 'quinella', [3, 5], 400, tid));
+    expect(me(s).tickets.length).toBe(1);
+    expect(me(s).tickets[0]).toMatchObject({ id, amount: 400 });
+    // 3連単は順番が違えば別の馬券
+    s = ok(placeTicket(s, idOf('a'), 'trifecta', [1, 2, 3], 10, tid));
+    s = ok(placeTicket(s, idOf('a'), 'trifecta', [3, 2, 1], 10, tid));
+    expect(me(s).tickets.length).toBe(3);
+  });
+
+  test('合計が所持金を超える買い方はできない(置き換えは差し引きで判定)', () => {
+    let s = betting();
+    s = ok(placeTicket(s, idOf('a'), 'win', [1], 600, tid));
+    expect(placeTicket(s, idOf('a'), 'place', [1], 410, tid).error).toBe('bad_bet');
+    s = ok(placeTicket(s, idOf('a'), 'place', [1], 400, tid));
+    expect(placeTicket(s, idOf('a'), 'win', [2], 10, tid).error).toBe('bad_bet');
+    // 600 の馬券を 500 に置き換えるのは可、700 は不可
+    expect(placeTicket(s, idOf('a'), 'win', [1], 700, tid).error).toBe('bad_bet');
+    s = ok(placeTicket(s, idOf('a'), 'win', [1], 500, tid));
+    expect(me(s).tickets.reduce((a, t) => a + t.amount, 0)).toBe(900);
+  });
+
+  test('1 レースに 10 点まで。11 点目は買えないが、置き換えはできる', () => {
+    let s = betting();
+    for (let h = 1; h <= 8; h++) s = ok(placeTicket(s, idOf('a'), 'win', [h], 10, tid));
+    s = ok(placeTicket(s, idOf('a'), 'place', [1], 10, tid));
+    s = ok(placeTicket(s, idOf('a'), 'place', [2], 10, tid));
+    expect(me(s).tickets.length).toBe(10);
+    expect(placeTicket(s, idOf('a'), 'place', [3], 10, tid).error).toBe('bad_bet');
+    expect(placeTicket(s, idOf('a'), 'place', [2], 50, tid).error).toBeUndefined();
+  });
+
+  test('不正な馬券は bad_bet で state は不変', () => {
+    const s = betting();
+    const bad: [unknown, unknown, unknown][] = [
+      ['exacta', [1, 2], 100], [null, [1], 100], ['win', [1, 2], 100], ['win', [], 100], ['win', 1, 100],
+      ['quinella', [1], 100], ['quinella', [1, 1], 100], ['quinella', [1, 9], 100], ['quinella', [1, 2, 3], 100],
+      ['trifecta', [1, 2], 100], ['trifecta', [1, 2, 2], 100], ['trifecta', [1, 2, 0], 100], ['trifecta', [1, 2, 3.5], 100],
+      ['trifecta', ['1', 2, 3], 100], ['place', [1], 5], ['place', [1], 1010], ['place', [1], '100'], ['place', [1], -10],
+      ['win', '__proto__', 100], ['__proto__', [1], 100], ['constructor', [1], 100],
+    ];
+    for (const [type, horses, amount] of bad) {
+      const r = placeTicket(s, idOf('a'), type, horses, amount, tid);
+      expect(r.error, JSON.stringify([type, horses, amount])).toBe('bad_bet');
+      expect(r.state).toBe(s);
+    }
+    expect(placeTicket(s, 'nobody', 'win', [1], 100, tid).error).toBe('not_allowed');
+    expect(placeTicket(setup(['a']), idOf('a'), 'win', [1], 100, tid).error).toBe('not_allowed');
+  });
+
+  test('1 点ずつ取り消せる。存在しない id は bad_bet', () => {
+    let s = betting();
+    s = ok(placeTicket(s, idOf('a'), 'win', [1], 100, tid));
+    s = ok(placeTicket(s, idOf('a'), 'place', [2], 100, tid));
+    const [first, second] = me(s).tickets;
+    s = ok(cancelTicket(s, idOf('a'), first.id));
+    expect(me(s).tickets).toEqual([second]);
+    expect(cancelTicket(s, idOf('a'), 'nope').error).toBe('bad_bet');
+    expect(cancelTicket(s, idOf('a'), 123).error).toBe('bad_bet');
+    const racing = ok(adminCloseAndRace(s, seededRng(2), 0));
+    expect(cancelTicket(racing, idOf('a'), second.id).error).toBe('not_allowed');
+  });
+
+  test('精算: 馬券ごとに当たり外れを判定し、払い戻しを合計する', () => {
+    let s = betting(['a', 'b']);
+    s = ok(placeTicket(s, idOf('a'), 'win', [1], 100, tid));
+    s = ok(placeTicket(s, idOf('a'), 'place', [2], 100, tid));
+    s = ok(placeTicket(s, idOf('a'), 'quinella', [1, 2], 100, tid));
+    s = ok(placeTicket(s, idOf('a'), 'trifecta', [1, 2, 3], 100, tid));
+    s = ok(placeTicket(s, idOf('a'), 'trifecta', [2, 1, 3], 100, tid));
+    s = ok(placeTicket(s, idOf('a'), 'win', [8], 100, tid));
+    // 着順が 1→2→3 で始まる乱数の種を探す
+    let racing: GameState | undefined;
+    for (let seed = 1; seed < 20000 && !racing; seed++) {
+      const r = ok(adminCloseAndRace(s, seededRng(seed), 0));
+      if (r.race!.order.slice(0, 3).join() === '1,2,3') racing = r;
+    }
+    expect(racing).toBeDefined();
+    expect(racing!.players[0].coins).toBe(400); // 600 が引かれる
+    const done = finishRace(racing!);
+    const r = done.players[0].results!;
+    expect(r.staked).toBe(600);
+    expect(r.tickets.map((t) => t.won)).toEqual([true, true, true, true, false, false]);
+    const expected = r.tickets.slice(0, 4).reduce((a, t) => a + payout(t.amount, t.odds), 0);
+    expect(r.tickets.reduce((a, t) => a + t.payout, 0)).toBe(expected);
+    expect(r.delta).toBe(expected - 600);
+    expect(done.players[0].coins).toBe(400 + expected);
+    expect(done.players[1].results).toBeNull();
+    expect(finishRace(done)).toBe(done); // 二重に精算しない
+  });
+
+  test('次のレースで馬券と結果が消える', () => {
+    let s = betting();
+    s = ok(placeTicket(s, idOf('a'), 'place', [2], 100, tid));
+    s = finishRace(ok(adminCloseAndRace(s, seededRng(2), 0)));
+    s = ok(adminNext(s, seededRng(3)));
+    expect(me(s).tickets).toEqual([]);
+    expect(me(s).results).toBeNull();
+  });
+
+  test('view: 自分の馬券と結果が届き、ほかの人の馬券は結果画面で公開される', () => {
+    let s = betting(['a', 'b']);
+    s = ok(placeTicket(s, idOf('a'), 'place', [2], 100, tid));
+    s = ok(placeTicket(s, idOf('a'), 'quinella', [1, 2], 200, tid));
+    const mine = viewFor(s, idOf('a'), false, 0);
+    expect(mine.me!.tickets.map((t) => [t.type, t.horses, t.amount])).toEqual([['place', [2], 100], ['quinella', [1, 2], 200]]);
+    expect(mine.me!.results).toBeNull();
+    expect(mine.raceKey).toBe(s.raceKey);
+    const other = viewFor(s, idOf('b'), false, 0);
+    expect(JSON.stringify(other)).not.toContain('quinella'); // 受付中は他人の馬券は見えない
+    expect(other.betCount).toBe(1);
+    expect(viewFor(s, null, true, 0).players.find((p) => p.name === 'a')!.hasBet).toBe(true);
+
+    s = finishRace(ok(adminCloseAndRace(s, seededRng(2), 0)));
+    const result = viewFor(s, idOf('b'), false, 0);
+    expect(result.bets.length).toBe(1);
+    expect(result.bets[0].amount).toBe(300);
+    expect(result.bets[0].tickets.map((t) => [t.type, t.horses, t.amount])).toEqual([['place', [2], 100], ['quinella', [1, 2], 200]]);
+    expect(result.bets[0].tickets.every((t) => typeof t.won === 'boolean' && typeof t.payout === 'number')).toBe(true);
+    const myResult = viewFor(s, idOf('a'), false, 0).me!;
+    expect(myResult.results!.staked).toBe(300);
+    expect(myResult.results!.tickets.length).toBe(2);
+  });
+
+  test('古いアプリ向け: 従来の bet / lastResult の形でも届く', () => {
+    let s = betting();
+    s = ok(placeBet(s, idOf('a'), 3, 250)); // 従来の「単勝 1 点」
+    let v = viewFor(s, idOf('a'), false, 0);
+    expect(v.me!.bet).toEqual({ horse: 3, amount: 250 });
+    expect(v.me!.tickets).toMatchObject([{ type: 'win', horses: [3], amount: 250 }]);
+    // 従来の bet は「買い直し」: 既存の馬券を全部置き換える
+    s = ok(placeTicket(s, idOf('a'), 'place', [1], 100, tid));
+    s = ok(placeBet(s, idOf('a'), 4, 500));
+    expect(me(s).tickets).toMatchObject([{ type: 'win', horses: [4], amount: 500 }]);
+    expect(me(s).tickets.length).toBe(1);
+    s = finishRace(ok(adminCloseAndRace(s, seededRng(2), 0)));
+    v = viewFor(s, idOf('a'), false, 0);
+    const r = me(s).results!;
+    expect(v.me!.lastResult).toEqual({ horse: 4, amount: 500, won: r.delta > 0, delta: r.delta });
+    expect(v.bets[0]).toMatchObject({ horse: 4, amount: 500, delta: r.delta });
+    // 単勝を持たない人は、古いアプリには「賭けていない」と見える(表示できないため)
+    let t = betting();
+    t = ok(placeTicket(t, idOf('a'), 'place', [1], 100, tid));
+    expect(viewFor(t, idOf('a'), false, 0).me!.bet).toBeNull();
+  });
+
+  test('倍率表のメッセージ: 賭け受付中だけ作られ、raceKey が状態と一致する', () => {
+    expect(oddsMessage(setup(['a']))).toBeNull();
+    const s = betting();
+    const m = oddsMessage(s)!;
+    expect(m.t).toBe('odds');
+    expect(m.raceKey).toBe(s.raceKey);
+    expect(m.place.length).toBe(8);
+    expect(Object.keys(m.quinella).length).toBe(28);
+    expect(Object.keys(m.trifecta).length).toBe(336);
+    expect(m.quinella[comboKey('quinella', [2, 1])]).toBe(makeOddsTable(s.horses).quinella['1-2']);
+    expect(oddsMessage(ok(adminCloseAndRace(s, seededRng(2), 0)))).toBeNull();
+    // レースごとに raceKey が変わる
+    const next = ok(adminNext(finishRace(ok(adminCloseAndRace(s, seededRng(2), 0))), seededRng(3)));
+    expect(next.raceKey).not.toBe(s.raceKey);
+    expect(typeof next.raceKey).toBe('string');
+  });
+
+  test('migrate: 以前の形式(bet / lastResult)で保存された状態を新しい形に直す', () => {
+    const oldState = {
+      phase: 'result', raceNo: 1,
+      horses: [1, 2, 3, 4, 5, 6, 7, 8].map((no) => ({ no, name: `馬${no}`, prob: 0.125, odds: 8 })),
+      race: { startedAt: 0, durationMs: 20000, order: [2, 1, 3, 4, 5, 6, 7, 8], times: [] },
+      players: [
+        { id: 'x', pub: 'px', name: 'Test', coins: 900, online: false, bet: { horse: 1, amount: 100 }, lastResult: { horse: 1, amount: 100, won: false, delta: -100 } },
+        { id: 'y', pub: 'py', name: 'Skip', coins: 1000, online: false, bet: null, lastResult: null },
+        { id: 'z', name: 'NoPub', coins: 1000, online: false, bet: null, lastResult: null },
+      ],
+    };
+    const s = migrate(oldState);
+    expect(s.players[0].tickets).toMatchObject([{ type: 'win', horses: [1], amount: 100, odds: 8 }]);
+    expect(s.players[0].results).toMatchObject({ staked: 100, delta: -100, tickets: [{ won: false, payout: 0 }] });
+    expect(s.players[1].tickets).toEqual([]);
+    expect(s.players[1].results).toBeNull();
+    expect(typeof s.players[2].pub).toBe('string');
+    expect(s.players[2].pub.length).toBeGreaterThan(0);
+    expect('bet' in s.players[0]).toBe(false);
+    // 直した状態から view を作れ、次のレースにも進める
+    const v = viewFor(s, 'x', false, 0);
+    expect(v.me!.lastResult).toEqual({ horse: 1, amount: 100, won: false, delta: -100 });
+    expect(ok(adminNext(s, seededRng(1))).phase).toBe('betting');
+    // 新しい形の状態はそのまま
+    const fresh = betting();
+    expect(migrate(fresh)).toEqual(fresh);
+    // 壊れた値は新しい試合にする
+    expect(migrate(null).phase).toBe('lobby');
+    expect(migrate({ phase: 'weird' }).phase).toBe('lobby');
   });
 });

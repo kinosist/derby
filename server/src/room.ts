@@ -2,8 +2,8 @@
 
 import { DurableObject } from 'cloudflare:workers';
 import {
-  adminCloseAndRace, adminNewGame, adminNext, adminReset, adminStart, cancelBet, finishRace,
-  join, kick, kickAll, newGame, placeBet, sameScene, setOnline, viewFor,
+  adminCloseAndRace, adminNewGame, adminNext, adminReset, adminStart, cancelBet, cancelTicket, finishRace,
+  join, kick, kickAll, migrate, newGame, oddsMessage, placeBet, placeTicket, sameScene, setOnline, viewFor,
   type ErrorCode, type GameState, type R,
 } from './game';
 import { cryptoRng } from './rules';
@@ -13,7 +13,13 @@ export interface Env {
   TEACHER_KEY?: string;
 }
 
-type Attachment = { role: 'none' | 'player' | 'admin'; playerId?: string; badKeys?: number };
+type Attachment = {
+  role: 'none' | 'player' | 'admin';
+  playerId?: string;
+  badKeys?: number;
+  /** この接続に最後に送った倍率表のレース(同じ表を何度も送らないため) */
+  oddsKey?: string;
+};
 
 const MAX_MESSAGE_CHARS = 2048;
 const MAX_BAD_KEYS = 5;
@@ -36,7 +42,9 @@ export class Room extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
-      this.state = (await ctx.storage.get<GameState>('state')) ?? newGame();
+      // 以前の版で保存された状態は、今の形に直してから使う
+      const stored = await ctx.storage.get<unknown>('state');
+      this.state = stored === undefined ? newGame() : migrate(stored);
       // 休止・再起動をまたいで残っている接続と、参加者の接続状態を突き合わせる
       const connected = new Set<string>();
       for (const ws of ctx.getWebSockets()) {
@@ -121,10 +129,17 @@ export class Room extends DurableObject<Env> {
       }
       case 'bet': {
         if (att.role !== 'player' || !att.playerId) return this.sendError(ws, 'not_allowed');
+        // type があれば新しい形式(種類と馬を指定して 1 点買う)。なければ古いアプリの「単勝 1 点に買い直す」。
+        if (msg.type !== undefined) {
+          const newId = () => crypto.randomUUID().slice(0, 8);
+          return this.apply(ws, placeTicket(this.state, att.playerId, msg.type, msg.horses, msg.amount, newId));
+        }
         return this.apply(ws, placeBet(this.state, att.playerId, msg.horse, msg.amount));
       }
       case 'cancelBet': {
         if (att.role !== 'player' || !att.playerId) return this.sendError(ws, 'not_allowed');
+        // id があればその 1 点だけ、なければ(古いアプリ)全部を取り消す
+        if (msg.id !== undefined) return this.apply(ws, cancelTicket(this.state, att.playerId, msg.id));
         return this.apply(ws, cancelBet(this.state, att.playerId));
       }
       case 'adminAction': {
@@ -211,9 +226,20 @@ export class Room extends DurableObject<Env> {
       await this.ctx.storage.put('state', s);
     }
     const now = Date.now();
+    // 倍率表は大きいので、賭け受付中に、まだ送っていない接続にだけ送る
+    const odds = oddsMessage(s);
+    const oddsText = odds ? JSON.stringify(odds) : null;
     for (const ws of this.ctx.getWebSockets()) {
       const att = attachmentOf(ws);
       if (att.role === 'none') continue;
+      if (odds && oddsText && att.oddsKey !== odds.raceKey) {
+        try {
+          ws.send(oddsText);
+          ws.serializeAttachment({ ...att, oddsKey: odds.raceKey } satisfies Attachment);
+        } catch {
+          // 閉じかけの接続
+        }
+      }
       const view = viewFor(s, att.playerId ?? null, att.role === 'admin', now);
       this.send(ws, { t: 'state', ...view });
     }
