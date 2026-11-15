@@ -194,38 +194,63 @@ class _BettingViewState extends State<BettingView> {
     );
   }
 
-  /// 買った馬券の一覧(横に並べ、1 点ずつ取り消せる)
+  /// 買った馬券の一覧。折り返して全部を見せ、1 点ずつ取り消せる。
   Widget _buildTickets(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final staked = _me?.staked ?? 0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           '買った馬券 ${_tickets.length}点 ・ 計 ${formatCoins(staked)} ・ 残り ${formatCoins(_coins - staked)}',
           style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
         ),
-        SizedBox(
-          height: 40,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: _tickets.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 6),
-            itemBuilder: (context, i) {
-              final t = _tickets[i];
-              return InputChip(
-                label: Text('${ticketLabel(t.type, t.horses)} ・${formatCoins(t.amount)}'),
-                labelStyle: const TextStyle(fontSize: 13),
-                visualDensity: VisualDensity.compact,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                deleteIcon: Icon(Icons.close, size: 18, key: Key('cancel-${t.id}')),
-                deleteButtonTooltipMessage: '取り消す',
-                onDeleted: () => widget.onCancel(t.id),
-              );
-            },
+        const SizedBox(height: 4),
+        // ふつうは全部がそのまま見える。極端に小さい画面で出走表が隠れてしまわないよう、
+        // 画面の高さの 45% を超える分だけは一覧の中でスクロールする。
+        ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.45),
+          child: SingleChildScrollView(
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                for (final t in _tickets)
+                  Container(
+                    padding: const EdgeInsets.only(left: 10),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: scheme.outlineVariant),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${ticketLabel(t.type, t.horses)} ${formatCoins(t.amount)}',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, height: 1.2),
+                        ),
+                        Tooltip(
+                          message: '取り消す',
+                          child: InkResponse(
+                            radius: 16,
+                            onTap: () => widget.onCancel(t.id),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                              child: Icon(Icons.close, size: 16, key: Key('cancel-${t.id}'), color: scheme.onSurfaceVariant),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
       ],
     );
   }

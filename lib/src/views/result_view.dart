@@ -101,7 +101,7 @@ class _MyResult extends StatelessWidget {
   }
 }
 
-/// 自分の馬券ごとの結果(横に並べる。当たった馬券を先に)
+/// 自分の馬券ごとの結果(折り返して全部見せる。当たった馬券を先に)
 class _MyTickets extends StatelessWidget {
   const _MyTickets({required this.tickets});
   final List<TicketResult> tickets;
@@ -110,34 +110,32 @@ class _MyTickets extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final sorted = [...tickets.where((t) => t.won), ...tickets.where((t) => !t.won)];
-    return SizedBox(
-      height: 34,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        itemCount: sorted.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 6),
-        itemBuilder: (context, i) {
-          final t = sorted[i];
-          return Container(
-            alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            margin: const EdgeInsets.only(bottom: 6),
-            decoration: BoxDecoration(
-              color: t.won ? const Color(0xFFDDF3E2) : scheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: t.won ? const Color(0xFF0F7A35) : scheme.outlineVariant),
-            ),
-            child: Text(
-              t.won ? '${ticketLabel(t.type, t.horses)} +${formatCoins(t.payout)}' : '${ticketLabel(t.type, t.horses)} はずれ',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: t.won ? FontWeight.w800 : FontWeight.w500,
-                color: t.won ? const Color(0xFF0B5A27) : scheme.onSurfaceVariant,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 6,
+        runSpacing: 4,
+        children: [
+          for (final t in sorted)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+              decoration: BoxDecoration(
+                color: t.won ? const Color(0xFFDDF3E2) : scheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: t.won ? const Color(0xFF0F7A35) : scheme.outlineVariant),
+              ),
+              child: Text(
+                t.won ? '${ticketLabel(t.type, t.horses)} +${formatCoins(t.payout)}' : '${ticketLabel(t.type, t.horses)} はずれ',
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.2,
+                  fontWeight: t.won ? FontWeight.w800 : FontWeight.w500,
+                  color: t.won ? const Color(0xFF0B5A27) : scheme.onSurfaceVariant,
+                ),
               ),
             ),
-          );
-        },
+        ],
       ),
     );
   }

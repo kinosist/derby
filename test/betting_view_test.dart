@@ -189,6 +189,35 @@ void main() {
     expect(amount(tester), '100');
   });
 
+  testWidgets('馬券を 10 点買っても、一覧の全部が画面内に見えて、どれも取り消せる', (tester) async {
+    final tickets = [
+      for (var h = 1; h <= 4; h++) Ticket(id: 'tri$h', type: BetType.trifecta, horses: [h, h + 1, h + 2], amount: 100, odds: 141.2),
+      for (var h = 1; h <= 3; h++) Ticket(id: 'q$h', type: BetType.quinella, horses: [h, h + 4], amount: 100, odds: 18),
+      for (var h = 1; h <= 3; h++) Ticket(id: 'p$h', type: BetType.place, horses: [h], amount: 10, odds: 1.4),
+    ];
+    for (final size in [const Size(360, 780), const Size(320, 640)]) {
+      await pump(tester, bettingView(tickets: tickets), table: odds, size: size, ratio: 1.0);
+      expect(tester.takeException(), isNull);
+      final screen = Offset.zero & size;
+      for (final t in tickets) {
+        final label = find.textContaining(ticketLabel(t.type, t.horses));
+        expect(label, findsOneWidget, reason: '${t.id} が一覧に出ていない');
+        final rect = tester.getRect(label);
+        expect(screen.contains(rect.topLeft) && screen.contains(rect.bottomRight - const Offset(1, 1)), true,
+            reason: '${t.id} が画面の外にある: $rect (画面 $size)');
+        final close = tester.getRect(find.byKey(Key('cancel-${t.id}')));
+        expect(screen.contains(close.center), true, reason: '${t.id} の取り消しボタンが画面の外にある');
+      }
+      // 出走表も、少なくとも 1 頭分は見える
+      expect(tester.getRect(find.text(names[0])).bottom, lessThan(size.height));
+      // 買うボタンも画面内にある
+      expect(screen.contains(tester.getRect(find.widgetWithText(FilledButton, 'この馬券を買う')).bottomRight - const Offset(1, 1)), true);
+    }
+    // 一覧のどの馬券も、そのまま(スクロールせずに)取り消せる
+    await tester.tap(find.byKey(const Key('cancel-p3')));
+    expect(cancelled, ['p3']);
+  });
+
   testWidgets('同じ馬券を選ぶと「金額を変更」になり、その分は残りに含めて計算する', (tester) async {
     const tickets = [Ticket(id: 't1', type: BetType.win, horses: [2], amount: 1000, odds: 5.1)];
     await pump(tester, bettingView(tickets: tickets), table: odds);

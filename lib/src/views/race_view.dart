@@ -81,9 +81,9 @@ class _RaceViewState extends State<RaceView> with SingleTickerProviderStateMixin
                     1 => '${ticketLabel(tickets[0].type, tickets[0].horses)} に ${formatCoins(staked)}',
                     _ => '${tickets.length}点 計 ${formatCoins(staked)}(${tickets.map((t) => ticketLabel(t.type, t.horses)).join('、')})',
                   },
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: tickets.isEmpty ? null : FontWeight.w700),
+                  // 馬券が多いときは折り返して全部見せる
+                  style: (tickets.length > 1 ? theme.textTheme.bodyMedium : theme.textTheme.titleMedium)
+                      ?.copyWith(fontWeight: tickets.isEmpty ? null : FontWeight.w700, height: 1.25),
                 ),
               ),
               if (lead < 1.0) ...[
