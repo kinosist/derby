@@ -9,7 +9,7 @@
 
 ## 必要なもの
 
-- Flutter 3.50 以上(Android のビルド設定は AGP 9.3.1 / Gradle 9.5.0 / Kotlin 2.4.20)
+- Flutter(Dart SDK 3.11.0 以上。Android のビルド設定は AGP 9.3.1 / Gradle 9.5.0 / Kotlin 2.4.20。Flutter 3.50 で確認)
 - Windows でビルドする場合は「開発者モード」をオンにする(プラグインのビルドにシンボリックリンクが必要)
 - サーバーを動かす・公開する場合は Node.js
 

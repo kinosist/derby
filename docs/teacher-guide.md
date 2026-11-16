@@ -83,7 +83,7 @@ flutter build apk --release --target-platform android-x64 --dart-define=SERVER_U
 
 この方法で生徒の PC でビルドするには、次の2つが必要です。
 
-- **Flutter 3.50 以上**が入っていること。このプロジェクトの Android のビルド設定は Flutter 3.50 に合わせてあります(Android Gradle Plugin 9.3.1、Gradle 9.5.0、Kotlin 2.4.20)。古い Flutter ではビルドできないので、`flutter upgrade` で上げてください。
+- **新しめの Flutter**が入っていること(Dart SDK 3.11.0 以上)。このプロジェクトの Android のビルド設定は新しい形式です(Android Gradle Plugin 9.3.1、Gradle 9.5.0、Kotlin 2.4.20)。`The current Dart SDK version is …` と出て止まる場合は、Flutter が古いので `flutter upgrade` で上げてください。
 - **Windows の「開発者モード」がオン**になっていること。オフだと `Building with plugins requires symlink support.` と出て止まります。PowerShell で `start ms-settings:developers` を実行すると設定画面が開きます。変更には管理者権限が必要で、学校の PC では情報システムの担当の方に依頼することになる場合があります。
 
 どちらも難しい場合は、方法 A(APK を配る)を使ってください。APK なら Flutter も開発者モードも要りません。
