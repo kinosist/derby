@@ -7,6 +7,10 @@
 - `docs/teacher-guide.md` 先生向けの手順書(公開・配布・当日の進め方)
 - `docs/superpowers/specs/` 設計書
 
+## すぐ使う(ビルド不要)
+
+ビルド済みのアプリ(APK)を [Releases](https://github.com/kinosist/derby/releases/latest) からダウンロードし、起動したエミュレータの画面にドラッグ&ドロップする。
+
 ## 必要なもの
 
 - Flutter(Dart SDK 3.11.0 以上。Android のビルド設定は AGP 9.3.1 / Gradle 9.5.0 / Kotlin 2.4.20。Flutter 3.50 で確認)
