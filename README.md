@@ -7,6 +7,12 @@
 - `docs/teacher-guide.md` 先生向けの手順書(公開・配布・当日の進め方)
 - `docs/superpowers/specs/` 設計書
 
+## 必要なもの
+
+- Flutter 3.50 以上(Android のビルド設定は AGP 9.3.1 / Gradle 9.5.0 / Kotlin 2.4.20)
+- Windows でビルドする場合は「開発者モード」をオンにする(プラグインのビルドにシンボリックリンクが必要)
+- サーバーを動かす・公開する場合は Node.js
+
 ## 開発用の起動
 
 ```
