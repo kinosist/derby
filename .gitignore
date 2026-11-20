@@ -74,3 +74,6 @@ node_modules/
 # OS が作るファイル
 Thumbs.db
 desktop.ini
+
+# サーバーのコードは、このリポジトリには入れない(server/ の中の別のリポジトリで管理する)
+/server/
