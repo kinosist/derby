@@ -86,10 +86,22 @@ flutter build apk --release --target-platform android-x64 --dart-define=SERVER_U
 
 ### 方法 B: 生徒が Android Studio でプロジェクトを開いて実行する
 
-1. 生徒の PC にこのプロジェクトのフォルダを配ります。
-2. Android Studio で開き、エミュレータを選んで実行します。
+接続先(サーバーのアドレス)はコードに書かれていないので、**各 PC の Android Studio で指定します。**
 
-接続先を指定しなくても、公開中のサーバー(`wss://derby.versailles747.workers.dev/ws`)につながります。
+1. 生徒の PC にこのプロジェクトのフォルダを配ります(または GitHub から clone します)。
+2. Android Studio で開き、メニューの Run → Edit Configurations… を開きます。
+3. 左の一覧で `main.dart` を選び、「Additional run args」に次を入れて OK を押します。
+
+   ```
+   --dart-define=SERVER_URL=wss://derby.versailles747.workers.dev/ws
+   ```
+
+4. エミュレータを選んで実行します。
+
+- この指定を忘れると、アプリに「接続先が設定されていません」という案内の画面が出ます。
+- `--dart-define=SERVER_URL=` とアドレスの間に空白を入れないでください。
+- 設定を変えたあとは、アプリを一度停止して実行し直します(ホットリロードでは反映されません)。
+- この設定は各 PC の Android Studio に保存され、GitHub には上がりません。
 
 この方法で生徒の PC でビルドするには、次の2つが必要です。
 
@@ -97,7 +109,6 @@ flutter build apk --release --target-platform android-x64 --dart-define=SERVER_U
 - **Windows の「開発者モード」がオン**になっていること。オフだと `Building with plugins requires symlink support.` と出て止まります。PowerShell で `start ms-settings:developers` を実行すると設定画面が開きます。変更には管理者権限が必要で、学校の PC では情報システムの担当の方に依頼することになる場合があります。
 
 どちらも難しい場合は、方法 A(APK を配る)を使ってください。APK なら Flutter も開発者モードも要りません。
-別のサーバーにつなぎたいときだけ、Run → Edit Configurations… の「Additional run args」に `--dart-define=SERVER_URL=wss://<別のアドレス>/ws` を入れます。
 
 ---
 

@@ -4,16 +4,37 @@ import 'package:flutter/services.dart';
 import 'src/room_client.dart';
 import 'src/screens/game_screen.dart';
 import 'src/screens/join_screen.dart';
+import 'src/screens/setup_screen.dart';
 
-/// 接続先。何も指定しなければ、公開中のサーバーにつながる。
-/// 開発 PC のローカルサーバーにつなぐときは、実行時に
-/// --dart-define=SERVER_URL=ws://10.0.2.2:8787/ws を指定する(10.0.2.2 はエミュレータから見た開発 PC)。
-const serverUrl = String.fromEnvironment('SERVER_URL', defaultValue: 'wss://derby.versailles747.workers.dev/ws');
+/// 接続先(サーバーのアドレス)。コードには書かず、実行・ビルドのときに指定する。
+///   flutter run --dart-define=SERVER_URL=wss://<サーバーのアドレス>/ws
+/// Android Studio では、Run → Edit Configurations… の「Additional run args」に同じ指定を入れる。
+/// 開発 PC のローカルサーバーにつなぐときは ws://10.0.2.2:8787/ws(10.0.2.2 はエミュレータから見た開発 PC)。
+const serverUrl = String.fromEnvironment('SERVER_URL');
+
+/// 接続先として使える形か(ws:// か wss:// で始まるアドレス)
+bool isValidServerUrl(String url) {
+  final uri = Uri.tryParse(url.trim());
+  return uri != null && (uri.scheme == 'ws' || uri.scheme == 'wss') && uri.host.isNotEmpty;
+}
+
+/// アプリの入口。接続先が指定されていなければ、設定方法の案内を出す。
+Widget buildApp(String url) {
+  if (!isValidServerUrl(url)) {
+    return MaterialApp(
+      title: 'derby',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1F7A3A)), useMaterial3: true),
+      home: SetupScreen(given: url),
+    );
+  }
+  return DerbyApp(client: RoomClient(url: url.trim())..init());
+}
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-  runApp(DerbyApp(client: RoomClient(url: serverUrl)..init()));
+  runApp(buildApp(serverUrl));
 }
 
 class DerbyApp extends StatelessWidget {
