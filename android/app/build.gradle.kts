@@ -1,5 +1,9 @@
 plugins {
     id("com.android.application")
+    // Kotlin のプラグインは明示的に適用する。
+    // 新しい Flutter(3.50 など)は書かなくても自動で適用するが、それより古い Flutter は適用しないため、
+    // 下の kotlin { compilerOptions { ... } } が解釈できずにビルドが止まる。書いておけばどちらでも動く。
+    id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
